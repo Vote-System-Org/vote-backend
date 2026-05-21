@@ -35,6 +35,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -121,3 +122,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ── RSA 2048 ─────────────────────────────────────────────────────────────────
 RSA_PRIVATE_KEY_PATH = config('RSA_PRIVATE_KEY_PATH', default='keys/private.pem')
 RSA_PUBLIC_KEY_PATH  = config('RSA_PUBLIC_KEY_PATH',  default='keys/public.pem')
+
+# ── WhiteNoise (fichiers statiques production) ────────────────────────────────
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'

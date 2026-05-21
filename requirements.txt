@@ -11,3 +11,5 @@ celery==5.4.0
 redis==5.1.0
 django-filter==24.3
 dj-database-url==2.1.0
+gunicorn==26.0.0
+whitenoise==6.12.0
