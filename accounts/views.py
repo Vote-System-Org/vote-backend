@@ -20,6 +20,8 @@ from .serializers import (
 )
 from config import settings
 # from django.conf import settings
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 class InscriptionView(generics.CreateAPIView):
     """POST /api/auth/inscription/"""
@@ -54,6 +56,14 @@ class InscriptionView(generics.CreateAPIView):
             'message': 'Compte créé avec succès.',
             'data':    {'matricule': electeur.matricule, 'statut': electeur.statut},
         }, status=status.HTTP_201_CREATED)
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        # Ajouter is_staff dans le token
+        token['is_staff'] = user.is_staff
+        return token
 
 
 class ConnexionView(TokenObtainPairView):
