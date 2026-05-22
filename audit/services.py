@@ -1,5 +1,7 @@
 from django.utils import timezone
 from django.contrib.auth.models import User
+import hashlib
+import json
 
 
 class AuditService:
@@ -27,14 +29,16 @@ class AuditService:
                                       request.META.get('REMOTE_ADDR', ''))
                 details_enrichis['ip'] = ip.split(',')[0].strip() if ip else 'unknown'
 
-            # Calculer le hash
-            hash_courant = LogAudit.calculer_hash(
-                action         = action,
-                acteur_id      = acteur.id if acteur else None,
-                details        = details_enrichis,
-                hash_precedent = hash_precedent,
-                timestamp      = now,
-            )
+            # Calculer le hash SHA-256
+            payload = json.dumps({
+                'action':         action,
+                'acteur_id':      acteur.id if acteur else None,
+                'details':        details_enrichis,
+                'hash_precedent': hash_precedent,
+                'timestamp':      str(now),
+            }, sort_keys=True, ensure_ascii=False)
+
+            hash_courant = hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
             LogAudit.objects.create(
                 action         = action,

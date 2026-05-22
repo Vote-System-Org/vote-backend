@@ -125,3 +125,8 @@ RSA_PUBLIC_KEY_PATH  = config('RSA_PUBLIC_KEY_PATH',  default='keys/public.pem')
 
 # ── WhiteNoise (fichiers statiques production) ────────────────────────────────
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+
+
+# ── CAPTCHA ───────────────────────────────────────────────────────────────────
+CAPTCHA_TEST_MODE = DEBUG  # En DEBUG, le CAPTCHA accepte n'importe quelle valeur

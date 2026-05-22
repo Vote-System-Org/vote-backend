@@ -117,7 +117,7 @@ class CandidatAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        scrutin_pk = self.kwargs.get('scrutin_pk')
+        scrutin_pk = self.request.query_params.get('scrutin_id')
         if scrutin_pk:
             return Candidat.objects.filter(scrutin_id=scrutin_pk)
         return Candidat.objects.all()
@@ -131,7 +131,6 @@ class CandidatAdminViewSet(viewsets.ModelViewSet):
             return api_error('ERR_SCRUTIN_MODIF_IMPOSSIBLE',
                              'Impossible de supprimer un candidat sur scrutin ouvert/clôturé.', 403)
         return super().destroy(request, *args, **kwargs)
-
 
 class ScrutinsEligiblesView(generics.ListAPIView):
     """GET /api/v1/electeur/scrutins/"""

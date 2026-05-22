@@ -18,7 +18,8 @@ from .serializers import (
     InscriptionSerializer, ElecteurSerializer, ElecteurStatutSerializer,
     ListeBlancheSerializer, ImportCSVSerializer,
 )
-
+from config import settings
+# from django.conf import settings
 
 class InscriptionView(generics.CreateAPIView):
     """POST /api/auth/inscription/"""
@@ -26,15 +27,16 @@ class InscriptionView(generics.CreateAPIView):
     permission_classes = [AllowAny]
 
     def create(self, request, *args, **kwargs):
-        # Valider le CAPTCHA
-        captcha_key   = request.data.get('captcha_key', '')
-        captcha_value = request.data.get('captcha_value', '').upper()
-        try:
-            store = CaptchaStore.objects.get(hashkey=captcha_key)
-            if store.response.upper() != captcha_value:
-                return api_error('ERR_CAPTCHA_INVALIDE', 'Code CAPTCHA incorrect.', 400)
-        except CaptchaStore.DoesNotExist:
-            return api_error('ERR_CAPTCHA_INVALIDE', 'CAPTCHA expiré ou invalide.', 400)
+        # Valider le CAPTCHA (désactivé en mode DEBUG)
+        if not settings.DEBUG:
+            captcha_key   = request.data.get('captcha_key', '')
+            captcha_value = request.data.get('captcha_value', '').upper()
+            try:
+                store = CaptchaStore.objects.get(hashkey=captcha_key)
+                if store.response.upper() != captcha_value:
+                    return api_error('ERR_CAPTCHA_INVALIDE', 'Code CAPTCHA incorrect.', 400)
+            except CaptchaStore.DoesNotExist:
+                return api_error('ERR_CAPTCHA_INVALIDE', 'CAPTCHA expiré ou invalide.', 400)
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -59,15 +61,16 @@ class ConnexionView(TokenObtainPairView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        # Valider le CAPTCHA
-        captcha_key   = request.data.get('captcha_key', '')
-        captcha_value = request.data.get('captcha_value', '').upper()
-        try:
-            store = CaptchaStore.objects.get(hashkey=captcha_key)
-            if store.response.upper() != captcha_value:
-                return api_error('ERR_CAPTCHA_INVALIDE', 'Code CAPTCHA incorrect.', 400)
-        except CaptchaStore.DoesNotExist:
-            return api_error('ERR_CAPTCHA_INVALIDE', 'CAPTCHA expiré ou invalide.', 400)
+        # Valider le CAPTCHA (désactivé en mode DEBUG)
+        if not settings.DEBUG:
+            captcha_key   = request.data.get('captcha_key', '')
+            captcha_value = request.data.get('captcha_value', '').upper()
+            try:
+                store = CaptchaStore.objects.get(hashkey=captcha_key)
+                if store.response.upper() != captcha_value:
+                    return api_error('ERR_CAPTCHA_INVALIDE', 'Code CAPTCHA incorrect.', 400)
+            except CaptchaStore.DoesNotExist:
+                return api_error('ERR_CAPTCHA_INVALIDE', 'CAPTCHA expiré ou invalide.', 400)
 
         response = super().post(request, *args, **kwargs)
 
@@ -82,7 +85,7 @@ class ConnexionView(TokenObtainPairView):
                 )
 
         return response
-
+    
 
 class DeconnexionView(generics.GenericAPIView):
     """POST /api/auth/logout/"""
