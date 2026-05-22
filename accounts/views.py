@@ -120,7 +120,31 @@ class MonProfilView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        return self.request.user.electeur
+        # Si l'utilisateur est admin, retourner une réponse minimale
+        if self.request.user.is_staff:
+            return None
+
+        try:
+            return self.request.user.electeur
+        except Exception:
+            raise
+
+    def retrieve(self, request, *args, **kwargs):
+        if request.user.is_staff:
+            return Response({
+                'id':        request.user.id,
+                'matricule': 'ADMIN',
+                'nom':       request.user.last_name or 'Admin',
+                'prenom':    request.user.first_name or '',
+                'email':     request.user.email,
+                'filiere':   '',
+                'niveau':    '',
+                'statut':    'ELIGIBLE',
+                'a_vote':    False,
+                'date_vote': None,
+                'created_at': str(request.user.date_joined),
+            })
+        return super().retrieve(request, *args, **kwargs)
 
 
 class ElecteurViewSet(viewsets.ModelViewSet):
