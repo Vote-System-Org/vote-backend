@@ -11,3 +11,6 @@ python manage.py collectstatic --no-input
 
 # Appliquer les migrations
 python manage.py migrate
+
+# Créer un super utilisateur admin dans Render
+python manage.py create_admin 
