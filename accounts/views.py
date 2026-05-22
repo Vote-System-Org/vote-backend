@@ -18,9 +18,9 @@ from .serializers import (
     InscriptionSerializer, ElecteurSerializer, ElecteurStatutSerializer,
     ListeBlancheSerializer, ImportCSVSerializer,
 )
-from config import settings
-# from django.conf import settings
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from django.conf import settings
+# from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 class InscriptionView(generics.CreateAPIView):
@@ -68,6 +68,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class ConnexionView(TokenObtainPairView):
     """POST /api/auth/login/"""
+    serializer_class   = CustomTokenObtainPairSerializer
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
