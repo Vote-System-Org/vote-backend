@@ -11,6 +11,7 @@ from utils.exceptions import api_error
 from audit.services import AuditService
 from .models import Scrutin, Candidat
 from .serializers import ScrutinSerializer, CandidatSerializer
+from .serializers import  ScrutinPublicSerializer
 
 
 class ScrutinAdminViewSet(viewsets.ModelViewSet):
@@ -212,3 +213,12 @@ class ScrutinsClotures(generics.ListAPIView):
         ).filter(
             Q(niveau_cible__isnull=True) | Q(niveau_cible=electeur.niveau)
         )
+
+
+class ScrutinsCloturesPublicView(generics.ListAPIView):
+    """GET /api/v1/public/scrutins/clotures/"""
+    serializer_class   = ScrutinPublicSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return Scrutin.objects.filter(statut='CLOTURE').order_by('-date_fin')
