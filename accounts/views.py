@@ -216,12 +216,44 @@ class ListeBlancheListView(generics.ListAPIView):
 
 
 
-
+import requests
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.core.mail import send_mail
 from django.conf import settings as django_settings
+
+
+def envoyer_email_reset(destinataire: str, prenom: str, reset_url: str, api_key: str):
+    response = requests.post(
+        'https://api.sendgrid.com/v3/mail/send',
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        },
+        json={
+            'personalizations': [{
+                'to': [{'email': destinataire}],
+                'subject': 'Réinitialisation de votre mot de passe — VoteSystem',
+            }],
+            'from': {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
+            'content': [{
+                'type': 'text/plain',
+                'value': f"""Bonjour {prenom},
+
+Vous avez demandé la réinitialisation de votre mot de passe VoteSystem.
+
+Cliquez sur le lien ci-dessous pour créer un nouveau mot de passe :
+{reset_url}
+
+Ce lien est valable 24 heures.
+
+Si vous n'avez pas fait cette demande, ignorez cet email.
+
+— L'équipe VoteSystem""",
+            }],
+        }
+    )
+    return response.status_code
 
 
 class ResetPasswordRequestView(generics.GenericAPIView):
@@ -251,34 +283,24 @@ class ResetPasswordRequestView(generics.GenericAPIView):
         # URL de réinitialisation (frontend)
         reset_url = f"{request.data.get('frontend_url', 'http://localhost:5173')}/mot-de-passe/confirmer?uid={uid}&token={token}"
 
-        # Envoyer l'email via SendGrid
+        # Envoyer via API SendGrid
         try:
-            send_mail(
-                subject        = 'Réinitialisation de votre mot de passe — VoteSystem',
-                message        = f"""Bonjour {user.first_name},
-
-Vous avez demandé la réinitialisation de votre mot de passe VoteSystem.
-
-Cliquez sur le lien ci-dessous pour créer un nouveau mot de passe :
-{reset_url}
-
-Ce lien est valable 24 heures.
-
-Si vous n'avez pas fait cette demande, ignorez cet email.
-
-— L'équipe VoteSystem""",
-                from_email     = django_settings.DEFAULT_FROM_EMAIL,
-                recipient_list = [email],
-                fail_silently  = False,
+            status = envoyer_email_reset(
+                destinataire = email,
+                prenom       = user.first_name or user.username,
+                reset_url    = reset_url,
+                api_key      = django_settings.SENDGRID_API_KEY,
             )
+            print(f"SendGrid status: {status}")
         except Exception as e:
-            print(f"Erreur envoi email: {e}")
+            print(f"Erreur SendGrid: {e}")
 
         return Response({
             'status':  'success',
             'message': 'Si cet email existe, un lien de réinitialisation a été envoyé.',
-        })  
-        
+        })
+
+
 class ResetPasswordConfirmView(generics.GenericAPIView):
     """
     POST /api/v1/auth/password/confirm/
@@ -287,9 +309,9 @@ class ResetPasswordConfirmView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        uid      = request.data.get('uid', '')
-        token    = request.data.get('token', '')
-        password = request.data.get('password', '')
+        uid              = request.data.get('uid', '')
+        token            = request.data.get('token', '')
+        password         = request.data.get('password', '')
         password_confirm = request.data.get('password_confirm', '')
 
         if not all([uid, token, password, password_confirm]):
