@@ -25,6 +25,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'captcha',
     'django_filters',
+    'cloudinary_storage',
+    'cloudinary',
     # Nos applications
     'accounts',
     'scrutins',
@@ -130,3 +132,17 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ── CAPTCHA ───────────────────────────────────────────────────────────────────
 CAPTCHA_TEST_MODE = DEBUG  # En DEBUG, le CAPTCHA accepte n'importe quelle valeur
+
+
+
+
+# ── Cloudinary ────────────────────────────────────────────────────────────────
+import cloudinary
+
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY':    config('CLOUDINARY_API_KEY'),
+    'API_SECRET': config('CLOUDINARY_API_SECRET'),
+}
+
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
