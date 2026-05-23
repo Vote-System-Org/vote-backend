@@ -275,10 +275,11 @@ class ResetPasswordRequestView(generics.GenericAPIView):
         # URL de réinitialisation (frontend)
         reset_url = f"{request.data.get('frontend_url', 'http://localhost:5173')}/mot-de-passe/confirmer?uid={uid}&token={token}"
 
-        # Envoyer l'email
-        send_mail(
-            subject = 'Réinitialisation de votre mot de passe — VoteSystem',
-            message = f"""Bonjour {user.first_name},
+        # Envoyer l'email via SendGrid
+        try:
+            send_mail(
+                subject        = 'Réinitialisation de votre mot de passe — VoteSystem',
+                message        = f"""Bonjour {user.first_name},
 
 Vous avez demandé la réinitialisation de votre mot de passe VoteSystem.
 
@@ -290,15 +291,17 @@ Ce lien est valable 24 heures.
 Si vous n'avez pas fait cette demande, ignorez cet email.
 
 — L'équipe VoteSystem""",
-            from_email     = django_settings.EMAIL_HOST_USER or 'noreply@votesystem.com',
-            recipient_list = [email],
-            fail_silently  = False,
-        )
+                from_email     = django_settings.DEFAULT_FROM_EMAIL,
+                recipient_list = [email],
+                fail_silently  = False,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email: {e}")
 
         return Response({
             'status':  'success',
             'message': 'Si cet email existe, un lien de réinitialisation a été envoyé.',
-        })       
+        })  
         
 class ResetPasswordConfirmView(generics.GenericAPIView):
     """
