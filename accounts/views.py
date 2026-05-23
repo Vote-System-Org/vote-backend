@@ -237,3 +237,106 @@ class ListeBlancheListView(generics.ListAPIView):
     filter_backends    = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields   = ['filiere', 'niveau', 'a_cree_son_compte']
     search_fields      = ['matricule', 'nom', 'prenom', 'email']
+
+
+
+
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.core.mail import send_mail
+from django.conf import settings as django_settings
+
+
+class ResetPasswordRequestView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/password/reset/
+    Demande de réinitialisation du mot de passe.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip()
+        if not email:
+            return api_error('ERR_EMAIL_REQUIS', 'Email requis.', 400)
+
+        user = User.objects.filter(email=email).first()
+
+        if not user:
+            return Response({
+                'status':  'success',
+                'message': 'Si cet email existe, un lien de réinitialisation a été envoyé.',
+            })
+
+        # Générer le token
+        token = default_token_generator.make_token(user)
+        uid   = urlsafe_base64_encode(force_bytes(user.pk))
+
+        # URL de réinitialisation (frontend)
+        reset_url = f"{request.data.get('frontend_url', 'http://localhost:5173')}/mot-de-passe/confirmer?uid={uid}&token={token}"
+
+        # Envoyer l'email
+        send_mail(
+            subject = 'Réinitialisation de votre mot de passe — VoteSystem',
+            message = f"""Bonjour {user.first_name},
+
+Vous avez demandé la réinitialisation de votre mot de passe VoteSystem.
+
+Cliquez sur le lien ci-dessous pour créer un nouveau mot de passe :
+{reset_url}
+
+Ce lien est valable 24 heures.
+
+Si vous n'avez pas fait cette demande, ignorez cet email.
+
+— L'équipe VoteSystem""",
+            from_email     = django_settings.EMAIL_HOST_USER or 'noreply@votesystem.com',
+            recipient_list = [email],
+            fail_silently  = False,
+        )
+
+        return Response({
+            'status':  'success',
+            'message': 'Si cet email existe, un lien de réinitialisation a été envoyé.',
+        })       
+        
+class ResetPasswordConfirmView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/password/confirm/
+    Confirmation de la réinitialisation du mot de passe.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uid      = request.data.get('uid', '')
+        token    = request.data.get('token', '')
+        password = request.data.get('password', '')
+        password_confirm = request.data.get('password_confirm', '')
+
+        if not all([uid, token, password, password_confirm]):
+            return api_error('ERR_PARAMS_MANQUANTS', 'Tous les champs sont requis.', 400)
+
+        if password != password_confirm:
+            return api_error('ERR_PASSWORDS_MISMATCH',
+                             'Les mots de passe ne correspondent pas.', 400)
+
+        if len(password) < 8:
+            return api_error('ERR_PASSWORD_TROP_COURT',
+                             'Le mot de passe doit contenir au moins 8 caractères.', 400)
+
+        try:
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user    = User.objects.get(pk=user_id)
+        except (User.DoesNotExist, ValueError, TypeError):
+            return api_error('ERR_LIEN_INVALIDE', 'Lien invalide ou expiré.', 400)
+
+        if not default_token_generator.check_token(user, token):
+            return api_error('ERR_TOKEN_INVALIDE', 'Lien invalide ou expiré.', 400)
+
+        user.set_password(password)
+        user.save()
+
+        return Response({
+            'status':  'success',
+            'message': 'Mot de passe réinitialisé avec succès.',
+        })
