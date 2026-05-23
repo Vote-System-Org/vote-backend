@@ -120,16 +120,26 @@ class ScrutinAdminViewSet(viewsets.ModelViewSet):
                 request = request,
             )
 
-            # ── Envoi emails aux candidats ────────────────────────────────
+            # ── Envoi emails aux candidats ────────────────────────────
             api_key = getattr(django_settings, 'SENDGRID_API_KEY', '')
             if api_key:
                 try:
                     from votes.models import Vote
-                    candidats    = scrutin.candidats.filter(est_vote_blanc=False)
-                    nb_eligibles = scrutin.electeurs_eligibles().count()
-                    nb_votants   = Vote.objects.filter(scrutin=scrutin).count()
-                    taux         = round((nb_votants / nb_eligibles * 100), 1) \
-                                   if nb_eligibles > 0 else 0
+                    from accounts.models import Electeur
+
+                    candidats  = scrutin.candidats.filter(est_vote_blanc=False)
+                    nb_votants = Vote.objects.filter(scrutin=scrutin).count()
+
+                    # Calculer nb_eligibles
+                    qs = Electeur.objects.filter(statut='ELIGIBLE')
+                    if scrutin.filiere_cible:
+                        qs = qs.filter(filiere=scrutin.filiere_cible)
+                    if scrutin.niveau_cible:
+                        qs = qs.filter(niveau=scrutin.niveau_cible)
+                    nb_eligibles = qs.count()
+
+                    taux = round((nb_votants / nb_eligibles * 100), 1) \
+                           if nb_eligibles > 0 else 0
 
                     # Calculer le gagnant
                     resultats_list = []
@@ -156,7 +166,6 @@ class ScrutinAdminViewSet(viewsets.ModelViewSet):
                             )
                             pourcentage = round((nb_voix_candidat / nb_votants * 100), 1) \
                                 if nb_votants > 0 else 0
-
                             envoyer_email_resultats_candidat(
                                 destinataire       = candidat.email,
                                 nom_candidat       = f"{candidat.nom} {candidat.prenom or ''}".strip(),
