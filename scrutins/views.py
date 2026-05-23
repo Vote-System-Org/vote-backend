@@ -196,3 +196,19 @@ class ResultatsPublicView(generics.RetrieveAPIView):
             return api_error('ERR_RESULTATS_INDISPONIBLES',
                              'Résultats non disponibles.', 404)
         return Response({'status': 'success', 'data': scrutin.get_resultats()})
+
+
+
+class ScrutinsClotures(generics.ListAPIView):
+    """GET /api/v1/electeur/scrutins/clotures/"""
+    serializer_class   = ScrutinSerializer
+    permission_classes = [IsElecteur]
+
+    def get_queryset(self):
+        electeur = self.request.user.electeur
+        from django.db.models import Q
+        return Scrutin.objects.filter(statut='CLOTURE').filter(
+            Q(filiere_cible__isnull=True) | Q(filiere_cible=electeur.filiere)
+        ).filter(
+            Q(niveau_cible__isnull=True) | Q(niveau_cible=electeur.niveau)
+        )
