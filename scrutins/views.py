@@ -1,5 +1,7 @@
 import csv
+import requests as http_requests
 from django.http import HttpResponse
+from django.conf import settings as django_settings
 from rest_framework import viewsets, generics, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,8 +12,59 @@ from utils.permissions import IsAdmin, IsElecteur
 from utils.exceptions import api_error
 from audit.services import AuditService
 from .models import Scrutin, Candidat
-from .serializers import ScrutinSerializer, CandidatSerializer
-from .serializers import  ScrutinPublicSerializer
+from .serializers import ScrutinSerializer, CandidatSerializer, ScrutinPublicSerializer
+
+
+def envoyer_email_resultats_candidat(destinataire: str, nom_candidat: str,
+                                      scrutin_titre: str, nb_voix: int,
+                                      pourcentage: float, nb_votants: int,
+                                      taux_participation: float,
+                                      gagnant: str, resultats_url: str,
+                                      api_key: str):
+    """Envoie les résultats par email au candidat via SendGrid."""
+    try:
+        response = http_requests.post(
+            'https://api.sendgrid.com/v3/mail/send',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type':  'application/json',
+            },
+            json={
+                'personalizations': [{
+                    'to':      [{'email': destinataire}],
+                    'subject': f'Résultats — {scrutin_titre}',
+                }],
+                'from': {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
+                'content': [{
+                    'type':  'text/plain',
+                    'value': f"""Bonjour {nom_candidat},
+
+Le scrutin "{scrutin_titre}" vient d'être clôturé.
+
+═══════════════════════════════════════
+  VOS RÉSULTATS
+═══════════════════════════════════════
+
+  Voix obtenues   : {nb_voix}
+  Pourcentage     : {pourcentage}%
+  Total votants   : {nb_votants}
+  Participation   : {taux_participation}%
+
+  Élu(e)          : {gagnant}
+
+═══════════════════════════════════════
+
+Consultez les résultats complets :
+{resultats_url}
+
+— L'équipe VoteSystem""",
+                }],
+            },
+            timeout=10,
+        )
+        print(f"Email résultats candidat {destinataire}: {response.status_code}")
+    except Exception as e:
+        print(f"Erreur email résultats: {e}")
 
 
 class ScrutinAdminViewSet(viewsets.ModelViewSet):
@@ -66,6 +119,59 @@ class ScrutinAdminViewSet(viewsets.ModelViewSet):
                 details = {'scrutin_id': scrutin.id, 'declencheur': 'manuel'},
                 request = request,
             )
+
+            # ── Envoi emails aux candidats ────────────────────────────────
+            api_key = getattr(django_settings, 'SENDGRID_API_KEY', '')
+            if api_key:
+                try:
+                    from votes.models import Vote
+                    candidats    = scrutin.candidats.filter(est_vote_blanc=False)
+                    nb_eligibles = scrutin.electeurs_eligibles().count()
+                    nb_votants   = Vote.objects.filter(scrutin=scrutin).count()
+                    taux         = round((nb_votants / nb_eligibles * 100), 1) \
+                                   if nb_eligibles > 0 else 0
+
+                    # Calculer le gagnant
+                    resultats_list = []
+                    for c in scrutin.candidats.all():
+                        nb = Vote.objects.filter(scrutin=scrutin, candidat=c).count()
+                        resultats_list.append((c, nb))
+
+                    gagnant_obj = max(
+                        [r for r in resultats_list if not r[0].est_vote_blanc],
+                        key=lambda x: x[1],
+                        default=(None, 0)
+                    )
+                    gagnant_nom = f"{gagnant_obj[0].nom} {gagnant_obj[0].prenom or ''}".strip() \
+                        if gagnant_obj[0] else 'Aucun'
+
+                    frontend_url  = request.headers.get(
+                        'Origin', 'https://vote-frontend-phi.vercel.app')
+                    resultats_url = f"{frontend_url}/resultats/{scrutin.id}"
+
+                    for candidat in candidats:
+                        if candidat.email:
+                            nb_voix_candidat = next(
+                                (nb for c, nb in resultats_list if c.id == candidat.id), 0
+                            )
+                            pourcentage = round((nb_voix_candidat / nb_votants * 100), 1) \
+                                if nb_votants > 0 else 0
+
+                            envoyer_email_resultats_candidat(
+                                destinataire       = candidat.email,
+                                nom_candidat       = f"{candidat.nom} {candidat.prenom or ''}".strip(),
+                                scrutin_titre      = scrutin.titre,
+                                nb_voix            = nb_voix_candidat,
+                                pourcentage        = pourcentage,
+                                nb_votants         = nb_votants,
+                                taux_participation = taux,
+                                gagnant            = gagnant_nom,
+                                resultats_url      = resultats_url,
+                                api_key            = api_key,
+                            )
+                except Exception as e:
+                    print(f"Erreur envoi emails clôture: {e}")
+
             return Response({
                 'status':  'success',
                 'message': 'Scrutin clôturé.',
@@ -89,7 +195,7 @@ class ScrutinAdminViewSet(viewsets.ModelViewSet):
         response = HttpResponse(content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = \
             f'attachment; filename="resultats_{scrutin.id}.csv"'
-        response.write('\ufeff')  # BOM UTF-8 pour Excel
+        response.write('\ufeff')
 
         writer = csv.writer(response)
         writer.writerow(['Scrutin', 'Date début', 'Date fin',
@@ -132,6 +238,7 @@ class CandidatAdminViewSet(viewsets.ModelViewSet):
             return api_error('ERR_SCRUTIN_MODIF_IMPOSSIBLE',
                              'Impossible de supprimer un candidat sur scrutin ouvert/clôturé.', 403)
         return super().destroy(request, *args, **kwargs)
+
 
 class ScrutinsEligiblesView(generics.ListAPIView):
     """GET /api/v1/electeur/scrutins/"""
@@ -197,7 +304,6 @@ class ResultatsPublicView(generics.RetrieveAPIView):
             return api_error('ERR_RESULTATS_INDISPONIBLES',
                              'Résultats non disponibles.', 404)
         return Response({'status': 'success', 'data': scrutin.get_resultats()})
-
 
 
 class ScrutinsClotures(generics.ListAPIView):

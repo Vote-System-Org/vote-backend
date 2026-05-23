@@ -90,6 +90,7 @@ class Candidat(models.Model):
     scrutin        = models.ForeignKey(Scrutin, on_delete=models.CASCADE, related_name='candidats')
     nom            = models.CharField(max_length=100)
     prenom         = models.CharField(max_length=100, blank=True, null=True)
+    email        = models.EmailField(max_length=150, blank=True, null=True)
     photo          = models.ImageField(upload_to='candidats/', blank=True, null=True)
     programme      = models.TextField(blank=True, null=True)
     est_vote_blanc = models.BooleanField(default=False)
