@@ -5,7 +5,7 @@ from .models import Scrutin, Candidat
 class CandidatSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Candidat
-        fields = ['id', 'scrutin', 'nom', 'prenom', 'photo',
+        fields = ['id', 'scrutin', 'nom', 'prenom','email', 'photo',
                   'programme', 'est_vote_blanc', 'created_at']
         read_only_fields = ['est_vote_blanc', 'created_at']
 
