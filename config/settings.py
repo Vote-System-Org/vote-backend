@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'django_filters',
     'cloudinary_storage',
     'cloudinary',
+    'drf_spectacular',
     # Nos applications
     'accounts',
     'scrutins',
@@ -88,6 +89,22 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ('rest_framework.renderers.JSONRenderer',),
     # Gestion centralisée des erreurs
     'EXCEPTION_HANDLER': 'utils.exceptions.custom_exception_handler',
+    # Documentation automatique avec drf-spectacular
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+
+# Configuration de drf-spectacular pour la documentation OpenAPI/Swagger
+SPECTACULAR_SETTINGS = {
+    'TITLE':       'VoteSystem API',
+    'DESCRIPTION': 'API REST du système de vote électronique sécurisé — Licence GL 2025-2026',
+    'VERSION':     '1.0.0',
+    'CONTACT':     {'name': 'KENMATIO Vicens', 'email': 'kenmatiov@gmail.com'},
+    'LICENSE':     {'name': 'Projet académique — Université'},
+    'SERVERS':     [
+        {'url': 'https://vote-backend-api.onrender.com', 'description': 'Production'},
+        {'url': 'http://localhost:8000',                 'description': 'Développement'},
+    ],
 }
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
