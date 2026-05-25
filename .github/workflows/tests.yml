@@ -30,13 +30,13 @@ jobs:
           --health-retries 5
 
     env:
-      SECRET_KEY:            test_secret_key_for_ci_pipeline_only
-      DEBUG:                 'True'
-      DATABASE_URL:          postgresql://test_user:test_password@localhost:5432/test_vote_db
-      SENDGRID_API_KEY:      test_key
-      CLOUDINARY_CLOUD_NAME: test
-      CLOUDINARY_API_KEY:    test
-      CLOUDINARY_API_SECRET: test
+      SECRET_KEY:             test_secret_key_for_ci_pipeline_only
+      DEBUG:                  'True'
+      DATABASE_URL:           postgresql://test_user:test_password@localhost:5432/test_vote_db
+      SENDGRID_API_KEY:       test_key
+      CLOUDINARY_CLOUD_NAME:  test
+      CLOUDINARY_API_KEY:     test
+      CLOUDINARY_API_SECRET:  test
       DJANGO_SETTINGS_MODULE: config.settings
 
     steps:
@@ -53,17 +53,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov
+          pip install pytest-cov factory-boy faker
 
       - name: Run migrations
         run: python manage.py migrate --no-input
 
       - name: Run tests with coverage
-        run: |
-          pytest tests/ -v \
-            --cov=. \
-            --cov-report=term-missing \
-            --cov-report=html
+        run: >
+          pytest tests/ -v
+          --cov=.
+          --cov-report=term-missing
+          --cov-report=html
+          --cov-omit=*/migrations/*,manage.py,*/asgi.py,*/wsgi.py,*/tests.py
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
