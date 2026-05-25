@@ -63,9 +63,7 @@ jobs:
           pytest tests/ -v \
             --cov=. \
             --cov-report=term-missing \
-            --cov-report=html \
-            --cov-omit=*/migrations/*,manage.py,*/asgi.py,*/wsgi.py,*/tests.py
-        continue-on-error: false
+            --cov-report=html
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
