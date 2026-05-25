@@ -1,4 +1,4 @@
-name: Tests VoteSystem Backend
+name: CI/CD VoteSystem Backend
 
 on:
   push:
@@ -53,7 +53,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov factory-boy faker
 
       - name: Run migrations
         run: python manage.py migrate --no-input
@@ -69,3 +68,16 @@ jobs:
           name: coverage-report
           path: htmlcov/
           if-no-files-found: ignore
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy sur Render
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy sur Render
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}"
+          echo "✅ Déploiement Render déclenché avec succès"
