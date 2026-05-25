@@ -1,3 +1,4 @@
+# import hashlib
 import hashlib
 import json
 from django.db import models
@@ -44,3 +45,4 @@ class LogAudit(models.Model):
             'hash_precedent': hash_precedent,
             'timestamp':      str(timestamp),
         }, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()

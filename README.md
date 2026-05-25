@@ -1,160 +1,231 @@
-# vote-backend
-API Django du système de vote
+# VoteSystem — Backend API
 
+Système de vote électronique sécurisé — Backend Django REST Framework
 
-# 🗳️ Vote Électronique Sécurisé — Backend Django
-
-## Stack
-- **Django 4.2** + **Django REST Framework 3.15**
-- **PostgreSQL 15**
-- **JWT** (djangorestframework-simplejwt)
-- **RSA 2048** (PyCryptodome)
-- **Celery** + Redis (clôture automatique)
+[![Python](https://img.shields.io/badge/Python-3.10-blue)](https://python.org)
+[![Django](https://img.shields.io/badge/Django-4.2-green)](https://djangoproject.com)
+[![Tests](https://img.shields.io/badge/Tests-46%20passed-brightgreen)](https://pytest.org)
+[![License](https://img.shields.io/badge/License-Academic-orange)](LICENSE)
 
 ---
 
-## ⚡ Installation rapide
+## Présentation
+
+Plateforme de vote électronique sécurisée développée dans le cadre d'un projet tutoré de Licence Génie Logiciel.
+
+|               |                        |
+| ------------- | ---------------------- |
+| **Backend**   | KENMATIO Vicens        |
+| **Frontend**  | FOUOGUE Gabriela       |
+| **Encadreur** | Ing. KUEDA             |
+| **Promotion** | Licence GL — 2025-2026 |
+
+---
+
+## Stack technique
+
+| Élément           | Technologie                          |
+| ----------------- | ------------------------------------ |
+| Framework         | Django 4.2 + Django REST Framework   |
+| Base de données   | PostgreSQL 15                        |
+| Authentification  | JWT (djangorestframework-simplejwt)  |
+| Chiffrement votes | RSA 2048                             |
+| Emails            | SendGrid                             |
+| Stockage photos   | Cloudinary                           |
+| Documentation API | drf-spectacular (Swagger/OpenAPI)    |
+| Tests             | pytest + pytest-django + factory-boy |
+| Déploiement       | Render                               |
+
+---
+
+## URLs de production
+
+| Ressource             | URL                                                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| API                   | [https://vote-backend-api.onrender.com](https://vote-backend-api.onrender.com)                                 |
+| Documentation Swagger | [https://vote-backend-api.onrender.com/api/docs/](https://vote-backend-api.onrender.com/api/docs/)             |
+| ReDoc                 | [https://vote-backend-api.onrender.com/api/docs/redoc/](https://vote-backend-api.onrender.com/api/docs/redoc/) |
+
+---
+
+## Installation locale
+
+### Prérequis
+
+* Python 3.10+
+* PostgreSQL 15+
+* pip
+
+### Étapes
+
+### 1. Cloner le dépôt
 
 ```bash
-# 1. Cloner et entrer dans le projet
-cd vote_backend
+git clone https://github.com/Vote-System-Org/vote-backend.git
+cd vote-backend
+```
 
-# 2. Environnement virtuel
+### 2. Créer l'environnement virtuel
+
+```bash
 python -m venv venv
-source venv/bin/activate        # Linux/Mac
-venv\Scripts\activate           # Windows
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+```
 
-# 3. Dépendances
+### 3. Installer les dépendances
+
+```bash
 pip install -r requirements.txt
+```
 
-# 4. Variables d'environnement
+### 4. Configurer les variables d'environnement
+
+```bash
 cp .env.example .env
-# → Éditer .env avec vos valeurs
+# Modifier .env avec vos valeurs
+```
 
-# 5. Générer les clés RSA 2048
-mkdir keys
-python manage.py shell -c "from utils.rsa_service import RSAVoteService; RSAVoteService.generer_cles()"
+### 5. Appliquer les migrations
 
-# 6. Base de données
-createdb vote_electronique_db   # PostgreSQL
+```bash
 python manage.py migrate
+```
 
-# 7. Superuser admin
-python manage.py createsuperuser
+### 6. Créer un superutilisateur
 
-# 8. Lancer le serveur
+```bash
+python manage.py create_admin
+```
+
+### 7. Lancer le serveur
+
+```bash
 python manage.py runserver
 ```
 
----
-
-## 🔑 Endpoints API
-
-### Authentification (`/api/auth/`)
-| Méthode | URL | Description |
-|---------|-----|-------------|
-| `POST` | `/api/auth/inscription/` | Inscription via liste blanche |
-| `POST` | `/api/auth/login/` | Connexion (JWT + CAPTCHA) |
-| `POST` | `/api/auth/logout/` | Déconnexion (blacklist token) |
-| `POST` | `/api/auth/token/refresh/` | Rafraîchir l'access token |
-| `GET`  | `/api/auth/captcha/` | Générer un CAPTCHA |
-| `GET/PUT` | `/api/auth/profil/` | Mon profil |
-
-### Électeur (`/api/electeur/`)
-| Méthode | URL | Description |
-|---------|-----|-------------|
-| `GET`  | `/api/electeur/scrutins/` | Mes scrutins éligibles |
-| `GET`  | `/api/electeur/scrutins/{id}/candidats/` | Candidats d'un scrutin |
-| `POST` | `/api/electeur/vote/` | **Voter** |
-| `GET`  | `/api/electeur/vote/confirmation/{hash}/` | Vérifier mon reçu |
-| `GET`  | `/api/electeur/scrutins/{id}/resultats/` | Résultats (après clôture) |
-
-### Admin (`/api/admin/`)
-| Méthode | URL | Description |
-|---------|-----|-------------|
-| `POST` | `/api/admin/liste-blanche/import/` | Importer CSV |
-| `GET`  | `/api/admin/liste-blanche/` | Lister la liste blanche |
-| `GET/PUT/DELETE` | `/api/admin/electeurs/{id}/` | Gérer électeurs |
-| `PATCH`| `/api/admin/electeurs/{id}/statut/` | Changer statut |
-| `POST` | `/api/admin/scrutins/` | Créer un scrutin |
-| `POST` | `/api/admin/scrutins/{id}/ouvrir/` | Ouvrir |
-| `POST` | `/api/admin/scrutins/{id}/cloturer/` | Clôturer |
-| `GET`  | `/api/admin/scrutins/{id}/resultats/` | Résultats temps réel |
-| `GET`  | `/api/admin/scrutins/{id}/resultats/export/` | Export CSV |
-| `GET`  | `/api/admin/audit/logs/` | Logs d'audit |
-| `GET`  | `/api/admin/audit/integrite/` | Vérifier hash chain |
-
-### Public (`/api/public/`)
-| Méthode | URL | Description |
-|---------|-----|-------------|
-| `GET` | `/api/public/scrutins/{id}/resultats/` | Résultats publics |
+L'API est accessible sur : `http://localhost:8000/api/v1/`
 
 ---
 
-## 🚀 Celery (clôture automatique)
+## Tests
+
+### Lancer tous les tests
 
 ```bash
-# Terminal 1 — Worker Celery
-celery -A config worker --loglevel=info
+pytest tests/ -v
+```
 
-# Terminal 2 — Beat Scheduler (toutes les 60s)
-celery -A config beat --loglevel=info
+### Lancer avec couverture
+
+```bash
+pytest tests/ -v --cov=. --cov-report=html
+```
+
+### Résultats attendus
+
+```text
+46 passed in ~37s
+```
+
+### Structure des tests
+
+| Fichier                | Description                                    | Tests |
+| ---------------------- | ---------------------------------------------- | ----- |
+| `tests/test_models.py` | Tests unitaires — modèles et règles de gestion | 15    |
+| `tests/test_api.py`    | Tests d'intégration — endpoints API            | 20    |
+| `tests/test_vote.py`   | Tests flux complet de vote                     | 11    |
+
+---
+
+## Architecture du projet
+
+```text
+vote-backend/
+├── config/                 # Configuration Django
+│   ├── settings.py         # Paramètres de l'application
+│   ├── urls.py             # Routes principales
+│   └── wsgi.py             # Point d'entrée WSGI
+├── accounts/               # Module électeurs
+│   ├── models.py           # Electeur, ListeBlancheReference
+│   ├── views.py            # API authentification
+│   └── serializers.py
+├── scrutins/               # Module scrutins + candidats
+│   ├── models.py           # Scrutin, Candidat
+│   ├── views.py            # API scrutins
+│   └── serializers.py
+├── votes/                  # Module vote
+│   ├── models.py           # Vote, ElecteurScrutinVote
+│   └── views.py            # API vote
+├── audit/                  # Module audit
+│   ├── models.py           # LogAudit
+│   └── services.py         # Hash chain SHA-256
+├── tests/                  # Tests automatisés
+│   ├── factories.py        # Factories de test
+│   ├── test_models.py      # Tests unitaires
+│   ├── test_api.py         # Tests d'intégration
+│   └── test_vote.py        # Tests flux vote
+├── requirements.txt        # Dépendances Python
+├── pytest.ini              # Configuration pytest
+├── .env.example            # Variables d'environnement (modèle)
+└── API_DOCUMENTATION.md    # Documentation API complète
 ```
 
 ---
 
-## 🗂️ Structure du projet
+## Règles de gestion implémentées
 
-```
-vote_backend/
-├── config/
-│   ├── settings.py       # Configuration Django
-│   ├── urls.py           # Routes principales
-│   ├── celery.py         # Config Celery
-│   └── wsgi.py
-├── apps/
-│   ├── accounts/         # M1+M2 : Électeurs + Auth
-│   │   ├── models.py     # ListeBlancheReference, Electeur
-│   │   ├── serializers.py
-│   │   ├── views.py
-│   │   ├── urls.py       # /api/auth/
-│   │   └── urls_admin.py # /api/admin/electeurs/
-│   ├── scrutins/         # M3+M4 : Scrutins + Candidats
-│   │   ├── models.py     # Scrutin, Candidat
-│   │   ├── views.py
-│   │   ├── tasks.py      # Celery : clôture auto
-│   │   ├── urls_admin.py
-│   │   ├── urls_electeur.py
-│   │   └── urls_public.py
-│   ├── votes/            # M5 : Vote sécurisé
-│   │   ├── models.py     # Vote (anonyme), ElecteurScrutinVote
-│   │   ├── views.py      # VoteView (RSA 2048)
-│   │   └── urls.py
-│   └── audit/            # M6 : Audit + Résultats
-│       ├── models.py     # LogAudit (hash chain)
-│       ├── services.py   # AuditService
-│       └── views.py
-├── utils/
-│   ├── permissions.py    # IsAdmin, IsElecteur
-│   ├── exceptions.py     # Format erreur standard
-│   └── rsa_service.py    # RSA 2048 chiffrement
-├── keys/
-│   ├── private.pem       # ⚠️ NE PAS COMMITER
-│   └── public.pem
-├── manage.py
-├── requirements.txt
-└── .env.example
+| ID   | Règle                                             | Test |
+| ---- | ------------------------------------------------- | ---- |
+| RG01 | Un électeur ne vote qu'une seule fois par scrutin | ✅    |
+| RG02 | Un vote correspond à exactement un candidat       | ✅    |
+| RG03 | Le vote blanc est toujours disponible             | ✅    |
+| RG04 | Les votes sont strictement anonymes               | ✅    |
+| RG05 | Le scrutin peut être ouvert ou fermé              | ✅    |
+| RG06 | Clôture automatique à date_fin                    | ✅    |
+| RG07 | Résultats protégés avant clôture                  | ✅    |
+| RG08 | Profil académique infalsifiable                   | ✅    |
+| RG09 | Un matricule = un seul compte                     | ✅    |
+| RG10 | Éligibilité vérifiée côté serveur                 | ✅    |
+| RG11 | Aucun candidat modifiable sur scrutin ouvert      | ✅    |
+| RG12 | Minimum 1 candidat réel pour ouvrir               | ✅    |
+| RG13 | Électeur suspendu ne peut pas voter               | ✅    |
+| RG14 | Logs d'audit immuables                            | ✅    |
+
+---
+
+## Sécurité
+
+| Menace            | Mesure                                           |
+| ----------------- | ------------------------------------------------ |
+| Double vote       | Contrainte UNIQUE en base + vérification serveur |
+| Anonymat          | Séparation tables Vote et Electeur — aucune FK   |
+| Injection SQL     | ORM Django — aucune requête brute                |
+| XSS               | Échappement automatique Django                   |
+| CSRF              | SameSite=Strict cookie                           |
+| Brute force       | Blocage après 5 tentatives + CAPTCHA             |
+| Altération logs   | Hash chain SHA-256                               |
+| Chiffrement votes | RSA 2048                                         |
+
+---
+
+## Contribution
+
+```bash
+# Créer une branche feature
+git checkout -b feature/ma-fonctionnalite
+
+# Développer et tester
+pytest tests/ -v
+
+# Merger via develop
+git checkout develop
+git merge feature/ma-fonctionnalite
+git push origin develop
 ```
 
 ---
 
-## 🔒 Sécurité — Points clés
+*Projet tutoré 2025-2026 — Université — Filière Génie Logiciel*
 
-| Règle | Implémentation |
-|-------|---------------|
-| **RG01** Anti-doublon | `UNIQUE(electeur_id, scrutin_id)` dans `ElecteurScrutinVote` |
-| **RG04** Anonymat | Table `vote` sans FK vers `electeur` |
-| **RG06** Clôture auto | Celery Beat toutes les 60 secondes |
-| **RG08** Profil infalsifiable | `filiere`/`niveau` copiés depuis liste blanche, non exposés |
-| **RG10** Éligibilité serveur | `Electeur.est_eligible_scrutin()` appelé avant chaque vote |
-| **RG14** Logs immuables | Hash chain SHA-256 dans `LogAudit` |
+✅

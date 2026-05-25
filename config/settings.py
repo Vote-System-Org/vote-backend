@@ -154,7 +154,7 @@ CAPTCHA_TEST_MODE = DEBUG  # En DEBUG, le CAPTCHA accepte n'importe quelle valeu
 
 
 # ── Cloudinary ────────────────────────────────────────────────────────────────
-import cloudinary
+# import cloudinary
 
 CLOUDINARY_STORAGE = {
     'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME'),
