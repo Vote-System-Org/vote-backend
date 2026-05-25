@@ -221,3 +221,8 @@ __marimo__/
 keys/
 media/
 staticfiles/
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml

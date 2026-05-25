@@ -4,6 +4,10 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 import requests
+import hashlib
+import hmac
+import json
+import base64
 from django.conf import settings as django_settings
 
 from utils.permissions import IsElecteur
@@ -120,7 +124,7 @@ class VoteView(generics.CreateAPIView):
                              'Candidat invalide pour ce scrutin.', 400)
 
         # ── Chiffrement RSA 2048 ──────────────────────────────────────────────
-        import hashlib, hmac, json, base64
+        # import hashlib, hmac, json, base64
 
         bulletin_data    = json.dumps({
             'candidat_id': candidat.id,

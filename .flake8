@@ -1,0 +1,30 @@
+[flake8]
+max-line-length = 120
+exclude =
+    migrations,
+    venv,
+    .git,
+    __pycache__,
+    htmlcov,
+    staticfiles
+ignore =
+    E221,
+    E241,
+    E251,
+    E501,
+    W503,
+    W292,
+    W293,
+    W391,
+    E127,
+    E131,
+    E302,
+    E303,
+    E272,
+    E712,
+    E402,
+    F811
+per-file-ignores =
+    tests/*: E501,F401,F841
+    */admin.py: F401
+    */tests.py: F401

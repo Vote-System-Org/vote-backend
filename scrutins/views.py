@@ -2,11 +2,10 @@ import csv
 import requests as http_requests
 from django.http import HttpResponse
 from django.conf import settings as django_settings
-from rest_framework import viewsets, generics, status
+from rest_framework import viewsets, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django_filters.rest_framework import DjangoFilterBackend
 
 from utils.permissions import IsAdmin, IsElecteur
 from utils.exceptions import api_error
