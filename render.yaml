@@ -1,0 +1,76 @@
+# render.yaml — Nouveaux services uniquement
+# (vote-backend-api et vote-db déjà existants sur Render)
+
+services:
+
+  # ── Celery Worker (NOUVEAU) ──────────────────────────────────────────────────
+  - type: worker
+    name: vote-celery-worker
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      celery -A config worker
+      --loglevel=info
+      --concurrency=2
+      --queues=default,emails,cloture
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: vote-redis
+          type: redis
+          property: connectionString
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        value: kenmatiov@gmail.com
+
+  # ── Celery Beat (NOUVEAU) ────────────────────────────────────────────────────
+  - type: worker
+    name: vote-celery-beat
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      celery -A config beat
+      --loglevel=info
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: vote-redis
+          type: redis
+          property: connectionString
+
+# ── Redis (NOUVEAU) ───────────────────────────────────────────────────────────
+redis:
+  - name: vote-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: allkeys-lru
