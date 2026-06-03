@@ -499,3 +499,72 @@ class Command(BaseCommand):
                 )
         except Exception as e:
             logger.error(f"Erreur emails scrutin {scrutin.id} : {e}")
+
+
+
+# Commande de management pour clôturer automatiquement les scrutins expirés (RG06) via GitHub Actions
+# Cron GitHub Actions : `0 * * * *` (toutes les heures à 0 min)
+
+
+
+from rest_framework.decorators import api_view, permission_classes as drf_permission_classes
+
+
+@api_view(['POST'])
+@drf_permission_classes([AllowAny])
+def cron_cloture(request):
+    """
+    POST /api/v1/public/cron/cloture/
+    Endpoint appelé par le cron GitHub Actions — sécurisé par token secret.
+    """
+    token = request.headers.get('X-Cron-Token', '')
+    from django.conf import settings as conf
+    if not token or token != getattr(conf, 'CRON_SECRET_TOKEN', ''):
+        return Response({'error': 'Non autorisé'}, status=403)
+
+    from django.utils import timezone
+    from audit.services import AuditService
+
+    scrutins_expires = Scrutin.objects.filter(
+        statut='OUVERT',
+        date_fin__lte=timezone.now()
+    )
+
+    count    = scrutins_expires.count()
+    clotures = []
+
+    for scrutin in scrutins_expires:
+        try:
+            scrutin.statut = 'CLOTURE'
+            scrutin.save(update_fields=['statut'])
+
+            # Invalider le cache
+            cache.delete(f"candidats_scrutin_{scrutin.id}")
+            cache.delete(f"resultats_public_{scrutin.id}")
+            cache.delete(f"resultats_electeur_{scrutin.id}")
+            cache.delete("scrutins_clotures_public")
+            try:
+                cache.delete_pattern("scrutins_eligibles_*")
+            except Exception:
+                pass
+
+            AuditService.log(
+                action='CLOTURE_SCRUTIN',
+                acteur_id=None,
+                details={
+                    'scrutin_id':  scrutin.id,
+                    'titre':       scrutin.titre,
+                    'declencheur': 'CRON_GITHUB_ACTIONS',
+                }
+            )
+
+            clotures.append({'id': scrutin.id, 'titre': scrutin.titre})
+
+        except Exception as e:
+            logger.error(f"Erreur clôture scrutin {scrutin.id} : {e}")
+
+    return Response({
+        'status':   'success',
+        'clotures': count,
+        'scrutins': clotures,
+    })

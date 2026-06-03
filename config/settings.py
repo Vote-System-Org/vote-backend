@@ -224,3 +224,10 @@ CELERY_BEAT_SCHEDULER          = 'django_celery_beat.schedulers:DatabaseSchedule
 CACHE_SCRUTINS_ELIGIBLES = 30      # 30 secondes
 CACHE_RESULTATS_PUBLICS  = 60      # 60 secondes
 CACHE_LISTE_CANDIDATS    = 120     # 2 minutes
+
+
+
+
+
+# Cron pour clôturer les scrutins expirés (RG06)
+CRON_SECRET_TOKEN = config('CRON_SECRET_TOKEN', default='')

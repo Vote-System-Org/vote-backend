@@ -17,28 +17,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
+      - name: Clôturer scrutins expirés via API
+        run: |
+          echo "Appel de l'endpoint de clôture..."
+          response=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "X-Cron-Token: ${{ secrets.CRON_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            https://vote-backend-api.onrender.com/api/v1/public/cron/cloture/)
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+          body=$(echo "$response" | head -n -1)
+          status=$(echo "$response" | tail -n 1)
 
-      - name: Clôturer scrutins expirés
-        run: python manage.py cloture_scrutins_expires
-        env:
-          DJANGO_SETTINGS_MODULE: config.settings
-          DEBUG:                  "False"
-          SECRET_KEY:             ${{ secrets.SECRET_KEY }}
-          DATABASE_URL:           ${{ secrets.DATABASE_URL }}
-          REDIS_URL:              ${{ secrets.REDIS_URL }}
-          SENDGRID_API_KEY:       ${{ secrets.SENDGRID_API_KEY }}
-          CLOUDINARY_CLOUD_NAME:  ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          CLOUDINARY_API_KEY:     ${{ secrets.CLOUDINARY_API_KEY }}
-          CLOUDINARY_API_SECRET:  ${{ secrets.CLOUDINARY_API_SECRET }}
-          DEFAULT_FROM_EMAIL:     kenmatiov@gmail.com
-          ALLOWED_HOSTS:          localhost
-          JWT_ACCESS_TOKEN_LIFETIME_MINUTES: "15"
-          JWT_REFRESH_TOKEN_LIFETIME_DAYS:   "7"
+          echo "Status HTTP : $status"
+          echo "Réponse     : $body"
+
+          if [ "$status" != "200" ]; then
+            echo "❌ Erreur : HTTP $status"
+            exit 1
+          fi
+
+          echo "✅ Clôture exécutée avec succès"
