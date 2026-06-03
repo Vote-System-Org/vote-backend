@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────────
+# docker-compose.hub.yml
+# Utilise les images pré-buildées depuis Docker Hub
+# Usage : docker-compose -f docker-compose.hub.yml up
+# ─────────────────────────────────────────────────────────────────
+
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vote_postgres
+    environment:
+      POSTGRES_DB:       vote_db
+      POSTGRES_USER:     vote_user
+      POSTGRES_PASSWORD: vote_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vote_user -d vote_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vote_redis
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: vicens2/vote-backend:latest
+    container_name: vote_backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SECRET_KEY:             change_me_in_production
+      DEBUG:                  'False'
+      DATABASE_URL:           postgresql://vote_user:vote_password@postgres:5432/vote_db
+      REDIS_URL:              redis://redis:6379/0
+      ALLOWED_HOSTS:          localhost,127.0.0.1
+      DJANGO_SETTINGS_MODULE: config.settings
+    command: >-
+      sh -c "python manage.py migrate --no-input &&
+             gunicorn config.wsgi:application
+             --bind 0.0.0.0:8000
+             --worker-class gevent
+             --workers 4
+             --timeout 120"
+
+  celery_worker:
+    image: vicens2/vote-backend:latest
+    container_name: vote_celery_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SECRET_KEY:             change_me_in_production
+      DATABASE_URL:           postgresql://vote_user:vote_password@postgres:5432/vote_db
+      REDIS_URL:              redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: config.settings
+    command: >-
+      sh -c "celery -A config worker --loglevel=info --concurrency=4"
+
+  frontend:
+    image: vicens2/vote-frontend:latest
+    container_name: vote_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
