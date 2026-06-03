@@ -33,6 +33,9 @@ INSTALLED_APPS = [
     'scrutins',
     'votes',
     'audit',
+    # Scalabilité
+    'django_celery_beat',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -177,3 +180,47 @@ EMAIL_USE_SSL       = True
 EMAIL_HOST_USER     = 'apikey'
 EMAIL_HOST_PASSWORD = SENDGRID_API_KEY
 DEFAULT_FROM_EMAIL  = 'kenmatiov@gmail.com'
+
+
+# ── Redis Cache (Niveau 2 — Scalabilité) ──────────────────────────────────────
+REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+            "IGNORE_EXCEPTIONS": True,  # Si Redis down → pas de crash
+        },
+        "KEY_PREFIX": "vote",
+        "TIMEOUT": 300,  # 5 minutes par défaut
+    }
+}
+
+# Sessions via Redis (plus rapide que base de données)
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
+
+# ── Celery (Niveau 1 — Workers asynchrones) ───────────────────────────────────
+CELERY_BROKER_URL              = config('REDIS_URL', default=f'db+postgresql://{config("DATABASE_URL", default="")}')
+CELERY_RESULT_BACKEND          = 'django-db'
+CELERY_CACHE_BACKEND           = 'default'
+CELERY_ACCEPT_CONTENT          = ['json']
+CELERY_TASK_SERIALIZER         = 'json'
+CELERY_RESULT_SERIALIZER       = 'json'
+CELERY_TIMEZONE                = 'Africa/Douala'
+CELERY_TASK_TRACK_STARTED      = True
+CELERY_TASK_TIME_LIMIT         = 30 * 60   # 30 minutes max par tâche
+CELERY_BEAT_SCHEDULER          = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# ── Gunicorn — Workers gevent (Niveau 1) ──────────────────────────────────────
+# Configuré dans docker-compose.yml et Dockerfile via la commande CMD
+# gunicorn config.wsgi:application --worker-class gevent --workers 4
+
+# ── Cache des scrutins (durées) ───────────────────────────────────────────────
+CACHE_SCRUTINS_ELIGIBLES = 30      # 30 secondes
+CACHE_RESULTATS_PUBLICS  = 60      # 60 secondes
+CACHE_LISTE_CANDIDATS    = 120     # 2 minutes
