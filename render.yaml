@@ -3,6 +3,14 @@
 
 services:
 
+  # ── Redis (NOUVEAU) ───────────────────────────────────────────────────────────
+  - type: redis
+    name: vote-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
   # ── Celery Worker (NOUVEAU) ──────────────────────────────────────────────────
   - type: worker
     name: vote-celery-worker
@@ -67,10 +75,3 @@ services:
           name: vote-redis
           type: redis
           property: connectionString
-
-# ── Redis (NOUVEAU) ───────────────────────────────────────────────────────────
-redis:
-  - name: vote-redis
-    region: oregon
-    plan: free
-    maxmemoryPolicy: allkeys-lru
