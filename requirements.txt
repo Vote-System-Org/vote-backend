@@ -23,3 +23,7 @@ pytest-cov==7.1.0
 factory-boy==3.3.1
 faker==40.19.1
 flake8==7.2.0
+gevent==24.2.1
+django-redis==5.4.0
+django-celery-beat==2.6.0
+django-celery-results==2.5.1

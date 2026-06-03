@@ -13,6 +13,9 @@ from audit.services import AuditService
 from .models import Scrutin, Candidat
 from .serializers import ScrutinSerializer, CandidatSerializer, ScrutinPublicSerializer
 
+from django.core.cache import cache
+from django.conf import settings as django_settings
+
 
 def envoyer_email_resultats_candidat(destinataire: str, nom_candidat: str,
                                       scrutin_titre: str, nb_voix: int,
@@ -112,6 +115,12 @@ class ScrutinAdminViewSet(viewsets.ModelViewSet):
         scrutin = self.get_object()
         try:
             scrutin.cloturer()
+            # Invalider tous les caches liés à ce scrutin
+            cache.delete(f"candidats_scrutin_{scrutin.id}")
+            cache.delete(f"resultats_public_{scrutin.id}")
+            cache.delete(f"resultats_electeur_{scrutin.id}")
+            cache.delete("scrutins_clotures_public")
+            cache.delete_pattern("scrutins_eligibles_*")
             AuditService.log(
                 action  = 'CLOTURE_SCRUTIN',
                 acteur  = request.user,
@@ -249,70 +258,104 @@ class CandidatAdminViewSet(viewsets.ModelViewSet):
 
 
 class ScrutinsEligiblesView(generics.ListAPIView):
-    """GET /api/v1/electeur/scrutins/"""
+    """GET /api/v1/electeur/scrutins/ — avec cache Redis 30s"""
     serializer_class   = ScrutinSerializer
     permission_classes = [IsElecteur]
 
     def get_queryset(self):
-        electeur = self.request.user.electeur
+        electeur   = self.request.user.electeur
+        cache_key  = f"scrutins_eligibles_{electeur.filiere}_{electeur.niveau}_{electeur.id}"
+        cached     = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from django.db.models import Q
         from votes.models import ElecteurScrutinVote
 
         deja_votes = ElecteurScrutinVote.objects.filter(
             electeur=electeur).values_list('scrutin_id', flat=True)
 
-        return Scrutin.objects.filter(statut='OUVERT').filter(
+        queryset = Scrutin.objects.filter(statut='OUVERT').filter(
             Q(filiere_cible__isnull=True) | Q(filiere_cible=electeur.filiere)
         ).filter(
             Q(niveau_cible__isnull=True) | Q(niveau_cible=electeur.niveau)
         ).exclude(id__in=deja_votes)
 
+        timeout = getattr(django_settings, 'CACHE_SCRUTINS_ELIGIBLES', 30)
+        cache.set(cache_key, queryset, timeout=timeout)
+        return queryset
 
 class CandidatsScrutinView(generics.ListAPIView):
-    """GET /api/v1/electeur/scrutins/{id}/candidats/"""
+    """GET /api/v1/electeur/scrutins/{id}/candidats/ — avec cache Redis 2min"""
     serializer_class   = CandidatSerializer
     permission_classes = [IsElecteur]
 
     def get_queryset(self):
         scrutin_id = self.kwargs['pk']
         electeur   = self.request.user.electeur
+        cache_key  = f"candidats_scrutin_{scrutin_id}"
+        cached     = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             scrutin = Scrutin.objects.get(id=scrutin_id, statut='OUVERT')
         except Scrutin.DoesNotExist:
             return Candidat.objects.none()
+
         eligible, _ = electeur.est_eligible_scrutin(scrutin)
         if not eligible:
             return Candidat.objects.none()
-        return Candidat.objects.filter(scrutin=scrutin)
 
+        queryset = Candidat.objects.filter(scrutin=scrutin)
+        timeout  = getattr(django_settings, 'CACHE_LISTE_CANDIDATS', 120)
+        cache.set(cache_key, queryset, timeout=timeout)
+        return queryset
 
 class ResultatsElecteurView(generics.RetrieveAPIView):
-    """GET /api/v1/electeur/scrutins/{id}/resultats/"""
+    """GET /api/v1/electeur/scrutins/{id}/resultats/ — avec cache Redis 60s"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
+        cache_key = f"resultats_electeur_{pk}"
+        cached    = cache.get(cache_key)
+        if cached is not None:
+            return Response({'status': 'success', 'data': cached})
+
         try:
             scrutin = Scrutin.objects.get(id=pk)
         except Scrutin.DoesNotExist:
             return api_error('ERR_SCRUTIN_INEXISTANT', 'Scrutin introuvable.', 404)
+
         if scrutin.statut != 'CLOTURE':
             return api_error('ERR_RESULTATS_PROTEGES',
                              'Résultats disponibles uniquement après clôture (RG07).', 403)
-        return Response({'status': 'success', 'data': scrutin.get_resultats()})
 
+        resultats = scrutin.get_resultats()
+        timeout   = getattr(django_settings, 'CACHE_RESULTATS_PUBLICS', 60)
+        cache.set(cache_key, resultats, timeout=timeout)
+        return Response({'status': 'success', 'data': resultats})
 
 class ResultatsPublicView(generics.RetrieveAPIView):
-    """GET /api/v1/public/scrutins/{id}/resultats/"""
+    """GET /api/v1/public/scrutins/{id}/resultats/ — avec cache Redis 60s"""
     permission_classes = [AllowAny]
 
     def get(self, request, pk):
+        cache_key = f"resultats_public_{pk}"
+        cached    = cache.get(cache_key)
+        if cached is not None:
+            return Response({'status': 'success', 'data': cached})
+
         try:
             scrutin = Scrutin.objects.get(id=pk, statut='CLOTURE')
         except Scrutin.DoesNotExist:
             return api_error('ERR_RESULTATS_INDISPONIBLES',
                              'Résultats non disponibles.', 404)
-        return Response({'status': 'success', 'data': scrutin.get_resultats()})
 
+        resultats = scrutin.get_resultats()
+        timeout   = getattr(django_settings, 'CACHE_RESULTATS_PUBLICS', 60)
+        cache.set(cache_key, resultats, timeout=timeout)
+        return Response({'status': 'success', 'data': resultats})
 
 class ScrutinsClotures(generics.ListAPIView):
     """GET /api/v1/electeur/scrutins/clotures/"""
@@ -330,9 +373,17 @@ class ScrutinsClotures(generics.ListAPIView):
 
 
 class ScrutinsCloturesPublicView(generics.ListAPIView):
-    """GET /api/v1/public/scrutins/clotures/"""
+    """GET /api/v1/public/scrutins/clotures/ — avec cache Redis 60s"""
     serializer_class   = ScrutinPublicSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return Scrutin.objects.filter(statut='CLOTURE').order_by('-date_fin')
+        cache_key = "scrutins_clotures_public"
+        cached    = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        queryset = Scrutin.objects.filter(
+            statut='CLOTURE').order_by('-date_fin')
+        cache.set(cache_key, queryset, timeout=60)
+        return queryset
