@@ -25,8 +25,9 @@ FROM dependencies AS production
 
 COPY . .
 
-# Utilisateur non-root pour la sécurité
-RUN addgroup --system appgroup && \
+# Créer staticfiles AVANT de passer à appuser
+RUN mkdir -p /app/staticfiles && \
+    addgroup --system appgroup && \
     adduser --system --ingroup appgroup --home /app appuser && \
     chown -R appuser:appgroup /app
 
@@ -34,13 +35,11 @@ USER appuser
 
 EXPOSE 8000
 
-# Niveau 1 — Workers gevent asynchrones
 CMD ["gunicorn", "config.wsgi:application", \
      "--bind", "0.0.0.0:8000", \
      "--worker-class", "gevent", \
      "--workers", "4", \
      "--worker-connections", "100", \
      "--timeout", "120", \
-     "--keepalive", "5", \
      "--access-logfile", "-", \
      "--error-logfile", "-"]
