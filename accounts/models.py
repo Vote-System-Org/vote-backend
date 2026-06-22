@@ -1,5 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
+import random
+from django.utils import timezone
+from datetime import timedelta
 
 
 class ListeBlancheReference(models.Model):
@@ -81,3 +84,50 @@ class Electeur(models.Model):
             return False, 'ERR_NON_ELIGIBLE'
 
         return True, None
+
+
+
+
+
+class OTPInscription(models.Model):
+    """
+    Code OTP temporaire envoyé par email lors de l'inscription.
+    Valable 10 minutes. Maximum 3 tentatives.
+    """
+    matricule   = models.CharField(max_length=20)
+    email       = models.EmailField()
+    code        = models.CharField(max_length=6)
+    tentatives  = models.IntegerField(default=0)
+    utilise     = models.BooleanField(default=False)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    expire_at   = models.DateTimeField()
+
+    class Meta:
+        db_table     = 'otp_inscription'
+        verbose_name = 'OTP Inscription'
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            self.expire_at = timezone.now() + timedelta(minutes=10)
+        super().save(*args, **kwargs)
+
+    def est_valide(self):
+        return (
+            not self.utilise
+            and self.tentatives < 3
+            and timezone.now() < self.expire_at
+        )
+
+    @classmethod
+    def generer(cls, matricule, email):
+        """Supprime les anciens OTP et génère un nouveau code à 6 chiffres."""
+        cls.objects.filter(matricule=matricule, utilise=False).delete()
+        code = f"{random.randint(0, 999999):06d}"
+        return cls.objects.create(
+            matricule = matricule,
+            email     = email,
+            code      = code,
+        )
+
+    def __str__(self):
+        return f"OTP {self.matricule} — expire {self.expire_at}"

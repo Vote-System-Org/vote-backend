@@ -41,7 +41,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -90,6 +90,14 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_RENDERER_CLASSES': ('rest_framework.renderers.JSONRenderer',),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',   # visiteurs non connectés
+        'user': '100/minute',  # utilisateurs connectés
+    },
     # Gestion centralisée des erreurs
     'EXCEPTION_HANDLER': 'utils.exceptions.custom_exception_handler',
     # Documentation automatique avec drf-spectacular
@@ -98,17 +106,20 @@ REST_FRAMEWORK = {
 
 
 # Configuration de drf-spectacular pour la documentation OpenAPI/Swagger
-SPECTACULAR_SETTINGS = {
-    'TITLE':       'VoteSystem API',
-    'DESCRIPTION': 'API REST du système de vote électronique sécurisé — Licence GL 2025-2026',
-    'VERSION':     '1.0.0',
-    'CONTACT':     {'name': 'KENMATIO Vicens', 'email': 'kenmatiov@gmail.com'},
-    'LICENSE':     {'name': 'Projet académique — Université'},
-    'SERVERS':     [
-        {'url': 'https://vote-backend-api.onrender.com', 'description': 'Production'},
-        {'url': 'http://localhost:8000',                 'description': 'Développement'},
-    ],
-}
+if not DEBUG:
+    
+    SPECTACULAR_SETTINGS = {
+        'TITLE':       'VoteSystem API',
+        'DESCRIPTION': 'API REST du système de vote électronique sécurisé — Licence GL 2025-2026',
+        'VERSION':     '1.0.0',
+        'CONTACT':     {'name': 'KENMATIO Vicens', 'email': 'kenmatiov@gmail.com'},
+        'LICENSE':     {'name': 'Projet académique — Université'},
+        'SERVERS':     [
+            {'url': 'https://vote-backend-api.onrender.com', 'description': 'Production'},
+            {'url': 'http://localhost:8000',                 'description': 'Développement'},
+        ],
+        'SERVE_PERMISSIONS': ['rest_framework.permissions.IsAdminUser'],
+    }
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
@@ -125,8 +136,9 @@ SIMPLE_JWT = {
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 
-CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5173', cast=Csv())
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5174', cast=Csv())
 CORS_ALLOW_CREDENTIALS = True
+# CORS_URLS_REGEX = r'^.*$'
 
 # ── Internationalisation ──────────────────────────────────────────────────────
 LANGUAGE_CODE = 'fr-fr'
@@ -153,7 +165,8 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ── CAPTCHA ───────────────────────────────────────────────────────────────────
 CAPTCHA_TEST_MODE = DEBUG  # En DEBUG, le CAPTCHA accepte n'importe quelle valeur
-
+CAPTCHA_USE_RELATIVE_URL = config('CAPTCHA_USE_RELATIVE_URL', default=False, cast=bool)
+BACKEND_URL = config('BACKEND_URL', default='http://127.0.0.1:8000')
 
 
 
@@ -168,6 +181,7 @@ CLOUDINARY_STORAGE = {
 
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
+ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 
 # ── Email via SendGrid ────────────────────────────────────────────────────────
@@ -227,8 +241,21 @@ CACHE_RESULTATS_PUBLICS  = 60      # 60 secondes
 CACHE_LISTE_CANDIDATS    = 120     # 2 minutes
 
 
-
+# Cache local en mémoire si DEBUG (pas besoin de Redis en dev)
+if DEBUG:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
 
 
 # Cron pour clôturer les scrutins expirés (RG06)
 CRON_SECRET_TOKEN = config('CRON_SECRET_TOKEN', default='')
+
+
+
+# Force le SSL en production
+SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
+SECURE_HSTS_SECONDS = 31536000  # 1 an
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True

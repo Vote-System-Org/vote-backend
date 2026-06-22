@@ -23,8 +23,14 @@ from django.conf import settings
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from .models import OTPInscription
+
 class InscriptionView(generics.CreateAPIView):
-    """POST /api/auth/inscription/"""
+    """
+    POST /api/v1/auth/inscription/
+    Étape 1 : valide le matricule + email, génère et envoie l'OTP.
+    Ne crée PAS encore le compte.
+    """
     serializer_class   = InscriptionSerializer
     permission_classes = [AllowAny]
 
@@ -42,20 +48,219 @@ class InscriptionView(generics.CreateAPIView):
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        electeur = serializer.save()
 
-        AuditService.log(
-            action  = 'INSCRIPTION',
-            acteur  = electeur.user,
-            details = {'matricule': electeur.matricule},
-            request = request,
+        # Les données sont valides — on génère l'OTP mais on ne crée pas encore le compte
+        ref = serializer.validated_data['_ref']
+
+        otp = OTPInscription.generer(
+            matricule = ref.matricule,
+            email     = ref.email,
         )
+
+        # Stocker les données d'inscription en session temporaire (dans le cache Redis)
+        from django.core.cache import cache
+        import json
+
+        cache_key = f"inscription_pending_{ref.matricule}"
+        cache.set(cache_key, json.dumps({
+            'matricule':        ref.matricule,
+            'email':            serializer.validated_data['email'],
+            'password':         serializer.validated_data['password'],
+        }), timeout=600)  # 10 minutes
+
+        # Envoyer l'OTP par email
+        api_key = getattr(settings, 'SENDGRID_API_KEY', '')
+        if api_key:
+            envoyer_otp_inscription(
+                destinataire = ref.email,
+                prenom       = ref.prenom,
+                code         = otp.code,
+                api_key      = api_key,
+            )
+        else:
+            # En dev sans SendGrid : afficher le code dans les logs
+            print(f"\n{'='*40}")
+            print(f"OTP INSCRIPTION [{ref.matricule}] : {otp.code}")
+            print(f"{'='*40}\n")
+
+        return Response({
+            'status':  'otp_envoye',
+            'message': f'Un code de vérification a été envoyé à votre adresse email institutionnelle.',
+            'data': {
+                'matricule': ref.matricule,
+                'email_masque': _masquer_email(ref.email),
+            },
+        }, status=status.HTTP_200_OK)
+
+
+def _masquer_email(email: str) -> str:
+    """Masque partiellement l'email pour l'affichage. ex: ke***@univ.cm"""
+    parts = email.split('@')
+    if len(parts) != 2:
+        return email
+    local = parts[0]
+    visible = local[:2] if len(local) >= 2 else local
+    return f"{visible}***@{parts[1]}"
+
+
+class VerificationOTPView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/inscription/verification-otp/
+    Étape 2 : vérifie le code OTP et crée le compte si valide.
+    Corps : { "matricule": "21GL1234", "code": "482931" }
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        matricule = request.data.get('matricule', '').strip()
+        code      = request.data.get('code', '').strip()
+
+        if not matricule or not code:
+            return api_error('ERR_PARAMS_MANQUANTS',
+                             'matricule et code sont requis.', 400)
+
+        # Récupérer l'OTP en base
+        try:
+            otp = OTPInscription.objects.filter(
+                matricule = matricule,
+                utilise   = False,
+            ).latest('created_at')
+        except OTPInscription.DoesNotExist:
+            return api_error('ERR_OTP_INTROUVABLE',
+                             'Aucun code en attente pour ce matricule.', 400)
+
+        # Vérifier validité (expiration + tentatives)
+        if not otp.est_valide():
+            return api_error('ERR_OTP_EXPIRE',
+                             'Code expiré ou nombre de tentatives dépassé. '
+                             'Recommencez l\'inscription.', 400)
+
+        # Vérifier le code
+        if otp.code != code:
+            otp.tentatives += 1
+            otp.save()
+            restantes = 3 - otp.tentatives
+            if restantes <= 0:
+                return api_error('ERR_OTP_BLOQUE',
+                                 'Trop de tentatives. Recommencez l\'inscription.', 400)
+            return api_error('ERR_OTP_INVALIDE',
+                             f'Code incorrect. {restantes} tentative(s) restante(s).', 400)
+
+        # Code correct — récupérer les données en cache
+        from django.core.cache import cache
+        import json
+
+        cache_key = f"inscription_pending_{matricule}"
+        donnees   = cache.get(cache_key)
+
+        if not donnees:
+            return api_error('ERR_SESSION_EXPIREE',
+                             'Session expirée. Recommencez l\'inscription.', 400)
+
+        donnees = json.loads(donnees)
+
+        # Créer le compte
+        try:
+            ref = ListeBlancheReference.objects.get(matricule=matricule)
+
+            if ref.a_cree_son_compte:
+                return api_error('ERR_COMPTE_EXISTANT',
+                                 'Un compte existe déjà pour ce matricule.', 400)
+
+            user = User.objects.create_user(
+                username   = matricule,
+                email      = donnees['email'],
+                password   = donnees['password'],
+                first_name = ref.prenom,
+                last_name  = ref.nom,
+            )
+
+            electeur = Electeur.objects.create(
+                user      = user,
+                matricule = ref.matricule,
+                filiere   = ref.filiere,
+                niveau    = ref.niveau,
+                statut    = 'ELIGIBLE',
+            )
+
+            ref.a_cree_son_compte = True
+            ref.save()
+
+            # Marquer l'OTP comme utilisé
+            otp.utilise = True
+            otp.save()
+
+            # Nettoyer le cache
+            cache.delete(cache_key)
+
+            AuditService.log(
+                action  = 'INSCRIPTION',
+                acteur  = user,
+                details = {'matricule': electeur.matricule, 'mfa': 'OTP_EMAIL'},
+                request = request,
+            )
+
+            return Response({
+                'status':  'success',
+                'message': 'Compte créé avec succès. Vous pouvez maintenant vous connecter.',
+                'data': {
+                    'matricule': electeur.matricule,
+                    'statut':   electeur.statut,
+                },
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return api_error('ERR_CREATION_COMPTE',
+                             f'Erreur lors de la création du compte : {str(e)}', 500)
+
+
+class RenvoyerOTPView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/inscription/renvoyer-otp/
+    Renvoie un nouveau code si l'ancien est expiré.
+    Corps : { "matricule": "21GL1234" }
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        matricule = request.data.get('matricule', '').strip()
+
+        if not matricule:
+            return api_error('ERR_PARAMS_MANQUANTS', 'matricule requis.', 400)
+
+        # Vérifier que le matricule est en cours d'inscription
+        from django.core.cache import cache
+        cache_key = f"inscription_pending_{matricule}"
+        if not cache.get(cache_key):
+            return api_error('ERR_SESSION_EXPIREE',
+                             'Session expirée. Recommencez l\'inscription.', 400)
+
+        try:
+            ref = ListeBlancheReference.objects.get(matricule=matricule)
+        except ListeBlancheReference.DoesNotExist:
+            return api_error('ERR_MATRICULE_INCONNU', 'Matricule inconnu.', 400)
+
+        otp = OTPInscription.generer(
+            matricule = matricule,
+            email     = ref.email,
+        )
+
+        api_key = getattr(settings, 'SENDGRID_API_KEY', '')
+        if api_key:
+            envoyer_otp_inscription(
+                destinataire = ref.email,
+                prenom       = ref.prenom,
+                code         = otp.code,
+                api_key      = api_key,
+            )
+        else:
+            print(f"\nOTP RENVOI [{matricule}] : {otp.code}\n")
 
         return Response({
             'status':  'success',
-            'message': 'Compte créé avec succès.',
-            'data':    {'matricule': electeur.matricule, 'statut': electeur.statut},
-        }, status=status.HTTP_201_CREATED)
+            'message': 'Nouveau code envoyé.',
+            'data':    {'email_masque': _masquer_email(ref.email)},
+        })
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -112,18 +317,38 @@ class DeconnexionView(generics.GenericAPIView):
             return api_error('ERR_TOKEN_INVALIDE', 'Token invalide ou expiré.', 400)
 
 
+# class CaptchaRefreshView(generics.GenericAPIView):
+#     """GET /api/auth/captcha/"""
+#     permission_classes = [AllowAny]
+
+#     def get(self, request):
+#         new_key = CaptchaStore.generate_key()
+#         return Response({
+#             'captcha_key':       new_key,
+#             # 'captcha_image_url': captcha_image_url(new_key)
+#              'captcha_image_url': request.build_absolute_uri(
+#                 captcha_image_url(new_key)),
+            
+#         })
+        
+        
 class CaptchaRefreshView(generics.GenericAPIView):
     """GET /api/auth/captcha/"""
     permission_classes = [AllowAny]
 
     def get(self, request):
         new_key = CaptchaStore.generate_key()
+        image_url = captcha_image_url(new_key)
+
+        if not getattr(settings, 'CAPTCHA_USE_RELATIVE_URL', False):
+            # Force l'URL vers le backend Django directement
+            backend_url = getattr(settings, 'BACKEND_URL', 'http://127.0.0.1:8000')
+            image_url = f"{backend_url}{image_url}"
+
         return Response({
             'captcha_key':       new_key,
-            'captcha_image_url': request.build_absolute_uri(
-                captcha_image_url(new_key)),
+            'captcha_image_url': image_url,
         })
-
 
 class MonProfilView(generics.RetrieveUpdateAPIView):
     """GET/PUT /api/auth/profil/"""
@@ -248,36 +473,182 @@ from django.conf import settings as django_settings
 
 
 def envoyer_email_reset(destinataire: str, prenom: str, reset_url: str, api_key: str):
-    response = requests.post(
-        'https://api.sendgrid.com/v3/mail/send',
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        json={
-            'personalizations': [{
-                'to': [{'email': destinataire}],
-                'subject': 'Réinitialisation de votre mot de passe — VoteSystem',
-            }],
-            'from': {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
-            'content': [{
-                'type': 'text/plain',
-                'value': f"""Bonjour {prenom},
+    """Envoie le lien de réinitialisation de mot de passe via SendGrid avec template HTML professionnel."""
 
-Vous avez demandé la réinitialisation de votre mot de passe VoteSystem.
+    html_content = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Réinitialisation de mot de passe — VoteSystem</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
 
-Cliquez sur le lien ci-dessous pour créer un nouveau mot de passe :
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f9;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+          <!-- EN-TÊTE -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563a8 100%);border-radius:12px 12px 0 0;padding:40px 48px;text-align:center;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-bottom:16px;">
+                    <div style="display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:12px;padding:14px 20px;">
+                      <span style="font-size:28px;color:#ffffff;font-weight:700;letter-spacing:1px;">VoteSystem</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center">
+                    <p style="margin:0;color:rgba(255,255,255,0.85);font-size:14px;letter-spacing:0.5px;">
+                      Système de Vote Électronique Sécurisé
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CORPS -->
+          <tr>
+            <td style="background:#ffffff;padding:48px;border-left:1px solid #e5e9f0;border-right:1px solid #e5e9f0;">
+
+              <!-- Icône cadenas -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td align="center">
+                    <div style="width:64px;height:64px;background:#f0f4ff;border:2px solid #2563a8;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;line-height:64px;text-align:center;">
+                      🔐
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Salutation -->
+              <p style="margin:0 0 8px;font-size:22px;font-weight:600;color:#1a2844;">
+                Bonjour {prenom},
+              </p>
+              <p style="margin:0 0 32px;font-size:15px;color:#64748b;line-height:1.6;">
+                Nous avons reçu une demande de réinitialisation du mot de passe associé à votre compte VoteSystem.
+                Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe.
+              </p>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 32px;">
+
+              <!-- Bouton CTA -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td align="center">
+                    <a href="{reset_url}"
+                       style="display:inline-block;background:linear-gradient(135deg,#1e3a5f 0%,#2563a8 100%);color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:16px 40px;border-radius:10px;letter-spacing:0.5px;">
+                      Réinitialiser mon mot de passe
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Lien texte de secours -->
+              <p style="margin:0 0 32px;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6;">
+                Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :<br>
+                <a href="{reset_url}" style="color:#2563a8;word-break:break-all;font-size:12px;">{reset_url}</a>
+              </p>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 32px;">
+
+              <!-- Avertissement expiration -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td style="background:#fff8ed;border:1px solid #fcd34d;border-radius:8px;padding:14px 20px;">
+                    <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
+                      <strong>Ce lien expire dans 24 heures.</strong>
+                      Passé ce délai, vous devrez effectuer une nouvelle demande de réinitialisation.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Avertissement sécurité -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:14px 20px;">
+                    <p style="margin:0;font-size:13px;color:#9f1239;line-height:1.5;">
+                      <strong>Vous n'avez pas fait cette demande ?</strong><br>
+                      Ignorez cet email. Votre mot de passe actuel restera inchangé.
+                      Si vous pensez que votre compte a été compromis, contactez immédiatement l'administration.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- PIED DE PAGE -->
+          <tr>
+            <td style="background:#f8faff;border:1px solid #e5e9f0;border-top:none;border-radius:0 0 12px 12px;padding:28px 48px;text-align:center;">
+              <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">
+                Ce message a été envoyé automatiquement par la plateforme VoteSystem.
+              </p>
+              <p style="margin:0 0 16px;font-size:12px;color:#cbd5e1;">
+                Université &nbsp;|&nbsp; Filière Génie Logiciel &nbsp;|&nbsp; Licence 2025-2026
+              </p>
+              <p style="margin:0;font-size:11px;color:#e2e8f0;">
+                Cet email est confidentiel et destiné uniquement à son destinataire.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>"""
+
+    text_content = f"""Bonjour {prenom},
+
+Nous avons reçu une demande de réinitialisation de votre mot de passe VoteSystem.
+
+Cliquez sur ce lien pour définir un nouveau mot de passe :
 {reset_url}
 
-Ce lien est valable 24 heures.
+Ce lien expire dans 24 heures.
 
 Si vous n'avez pas fait cette demande, ignorez cet email.
+Votre mot de passe actuel restera inchangé.
 
-— L'équipe VoteSystem""",
-            }],
-        }
-    )
-    return response.status_code
+— VoteSystem | Université | Génie Logiciel 2025-2026"""
+
+    try:
+        response = requests.post(
+            'https://api.sendgrid.com/v3/mail/send',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type':  'application/json',
+            },
+            json={
+                'personalizations': [{
+                    'to':      [{'email': destinataire}],
+                    'subject': 'Réinitialisation de votre mot de passe — VoteSystem',
+                }],
+                'from':    {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
+                'content': [
+                    {'type': 'text/plain', 'value': text_content},
+                    {'type': 'text/html',  'value': html_content},
+                ],
+            },
+            timeout=10,
+        )
+        print(f"Reset password SendGrid status: {response.status_code}")
+        return response.status_code
+    except Exception as e:
+        print(f"Erreur envoi email reset: {e}")
+        return None
 
 
 class ResetPasswordRequestView(generics.GenericAPIView):
@@ -365,3 +736,198 @@ class ResetPasswordConfirmView(generics.GenericAPIView):
             'status':  'success',
             'message': 'Mot de passe réinitialisé avec succès.',
         })
+        
+
+
+
+def envoyer_otp_inscription(destinataire: str, prenom: str, code: str, api_key: str):
+    """Envoie le code OTP par email via SendGrid avec template HTML professionnel."""
+    
+    chiffres = list(code)  # ["4", "8", "2", "9", "3", "1"]
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Code de vérification — VoteSystem</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f9;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+          <!-- EN-TÊTE -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563a8 100%);border-radius:12px 12px 0 0;padding:40px 48px;text-align:center;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-bottom:16px;">
+                    <div style="display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:12px;padding:14px 20px;">
+                      <span style="font-size:28px;color:#ffffff;font-weight:700;letter-spacing:1px;">VoteSystem</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center">
+                    <p style="margin:0;color:rgba(255,255,255,0.85);font-size:14px;letter-spacing:0.5px;">
+                      Système de Vote Électronique Sécurisé
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CORPS -->
+          <tr>
+            <td style="background:#ffffff;padding:48px;border-left:1px solid #e5e9f0;border-right:1px solid #e5e9f0;">
+
+              <!-- Salutation -->
+              <p style="margin:0 0 8px;font-size:22px;font-weight:600;color:#1a2844;">
+                Bonjour {prenom},
+              </p>
+              <p style="margin:0 0 32px;font-size:15px;color:#64748b;line-height:1.6;">
+                Vous avez initié une inscription sur la plateforme de vote électronique de votre université.
+                Veuillez utiliser le code ci-dessous pour confirmer votre identité et finaliser la création de votre compte.
+              </p>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 32px;">
+
+              <!-- Titre code -->
+              <p style="margin:0 0 20px;font-size:13px;font-weight:600;color:#94a3b8;text-align:center;letter-spacing:2px;text-transform:uppercase;">
+                Votre code de vérification
+              </p>
+
+              <!-- Code OTP — chiffres individuels -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td align="center">
+                    <table cellpadding="0" cellspacing="0">
+                      <tr>
+                        {''.join([f'''
+                        <td style="padding:0 4px;">
+                          <div style="
+                            width:52px;
+                            height:64px;
+                            background:#f0f4ff;
+                            border:2px solid #2563a8;
+                            border-radius:10px;
+                            display:inline-block;
+                            text-align:center;
+                            line-height:64px;
+                            font-size:32px;
+                            font-weight:700;
+                            color:#1e3a5f;
+                            font-family:'Courier New',monospace;
+                          ">{c}</div>
+                        </td>''' for c in chiffres])}
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Durée de validité -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td style="background:#fff8ed;border:1px solid #fcd34d;border-radius:8px;padding:14px 20px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="font-size:13px;color:#92400e;line-height:1.5;">
+                          <strong>Ce code expire dans 10 minutes.</strong>
+                          Si vous n'avez pas demandé ce code, ignorez cet email. Votre compte ne sera pas créé.
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 32px;">
+
+              <!-- Informations sécurité -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#f8faff;border-radius:8px;padding:20px 24px;">
+                    <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#1e3a5f;">
+                      Pourquoi ce code ?
+                    </p>
+                    <p style="margin:0 0 8px;font-size:13px;color:#64748b;line-height:1.6;">
+                      Pour garantir la sécurité des élections universitaires, notre système vérifie
+                      que vous êtes bien le titulaire du matricule utilisé lors de l'inscription.
+                      Ce code confirme que vous avez accès à l'adresse email institutionnelle associée.
+                    </p>
+                    <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.5;">
+                      Ne partagez jamais ce code avec quelqu'un d'autre, même s'il prétend faire partie de l'administration.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- PIED DE PAGE -->
+          <tr>
+            <td style="background:#f8faff;border:1px solid #e5e9f0;border-top:none;border-radius:0 0 12px 12px;padding:28px 48px;text-align:center;">
+              <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">
+                Ce message a été envoyé automatiquement par la plateforme VoteSystem.
+              </p>
+              <p style="margin:0 0 16px;font-size:12px;color:#cbd5e1;">
+                Université &nbsp;|&nbsp; Filière Génie Logiciel &nbsp;|&nbsp; Licence 2025-2026
+              </p>
+              <p style="margin:0;font-size:11px;color:#e2e8f0;">
+                Cet email est confidentiel et destiné uniquement à son destinataire.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>"""
+
+    text_content = f"""Bonjour {prenom},
+
+Votre code de vérification VoteSystem : {code}
+
+Ce code expire dans 10 minutes.
+Ne le partagez avec personne.
+
+Si vous n'avez pas demandé ce code, ignorez cet email.
+
+— VoteSystem | Université | Génie Logiciel 2025-2026"""
+
+    try:
+        response = requests.post(
+            'https://api.sendgrid.com/v3/mail/send',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type':  'application/json',
+            },
+            json={
+                'personalizations': [{
+                    'to':      [{'email': destinataire}],
+                    'subject': 'Votre code de vérification — VoteSystem',
+                }],
+                'from':    {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
+                'content': [
+                    {'type': 'text/plain', 'value': text_content},
+                    {'type': 'text/html',  'value': html_content},
+                ],
+            },
+            timeout=10,
+        )
+        print(f"OTP SendGrid status: {response.status_code}")
+        return response.status_code
+    except Exception as e:
+        print(f"Erreur envoi OTP: {e}")
+        return None
