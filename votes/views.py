@@ -23,7 +23,195 @@ from rest_framework.permissions import AllowAny
 def envoyer_email_recu_vote(destinataire: str, prenom: str,
                              scrutin_titre: str, hash_vote: str,
                              verification_url: str, api_key: str):
-    """Envoie le reçu de vote par email via SendGrid API."""
+    """Envoie le reçu de vote par email via SendGrid avec template HTML professionnel."""
+
+    # Découpe le hash en blocs de 8 pour la lisibilité
+    hash_blocs = ' '.join([hash_vote[i:i+8] for i in range(0, len(hash_vote), 8)])
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reçu de vote — {scrutin_titre}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f9;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+          <!-- EN-TÊTE -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563a8 100%);border-radius:12px 12px 0 0;padding:40px 48px;text-align:center;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-bottom:16px;">
+                    <div style="display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:12px;padding:14px 20px;">
+                      <span style="font-size:28px;color:#ffffff;font-weight:700;letter-spacing:1px;">VoteSystem</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center">
+                    <p style="margin:0;color:rgba(255,255,255,0.85);font-size:14px;letter-spacing:0.5px;">
+                      Système de Vote Électronique Sécurisé
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- BANDEAU CONFIRMATION -->
+          <tr>
+            <td style="background:#16a34a;padding:16px 48px;text-align:center;">
+              <p style="margin:0;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.5px;">
+                Vote enregistré avec succès
+              </p>
+            </td>
+          </tr>
+
+          <!-- CORPS -->
+          <tr>
+            <td style="background:#ffffff;padding:48px;border-left:1px solid #e5e9f0;border-right:1px solid #e5e9f0;">
+
+              <!-- Salutation -->
+              <p style="margin:0 0 8px;font-size:22px;font-weight:600;color:#1a2844;">
+                Bonjour {prenom},
+              </p>
+              <p style="margin:0 0 32px;font-size:15px;color:#64748b;line-height:1.6;">
+                Votre vote pour le scrutin <strong style="color:#1a2844;">«&nbsp;{scrutin_titre}&nbsp;»</strong>
+                a bien été enregistré dans notre système. Conservez ce reçu — il vous permet
+                de vérifier à tout moment que votre bulletin est bien pris en compte.
+              </p>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 32px;">
+
+              <!-- Carte reçu -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td style="background:#f8faff;border:1px solid #dbeafe;border-radius:12px;padding:28px 32px;">
+
+                    <!-- Titre reçu -->
+                    <p style="margin:0 0 20px;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;text-align:center;">
+                      Reçu de vote officiel
+                    </p>
+
+                    <!-- Scrutin -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+                      <tr>
+                        <td style="font-size:13px;color:#64748b;padding-bottom:4px;">Scrutin</td>
+                      </tr>
+                      <tr>
+                        <td style="font-size:15px;font-weight:600;color:#1a2844;">{scrutin_titre}</td>
+                      </tr>
+                    </table>
+
+                    <hr style="border:none;border-top:1px solid #dbeafe;margin:0 0 16px;">
+
+                    <!-- Hash -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+                      <tr>
+                        <td style="font-size:13px;color:#64748b;padding-bottom:8px;">
+                          Empreinte cryptographique de votre bulletin (SHA-256)
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="background:#1e3a5f;border-radius:8px;padding:14px 16px;">
+                          <p style="margin:0;font-family:'Courier New',monospace;font-size:12px;color:#93c5fd;letter-spacing:1px;word-break:break-all;line-height:1.8;">
+                            {hash_blocs}
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.5;">
+                      Cette empreinte est unique et identifie votre bulletin de manière irréversible,
+                      sans révéler votre choix.
+                    </p>
+
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Bouton vérification -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td align="center">
+                    <a href="{verification_url}"
+                       style="display:inline-block;background:linear-gradient(135deg,#1e3a5f 0%,#2563a8 100%);color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:14px 36px;border-radius:10px;letter-spacing:0.5px;">
+                      Vérifier mon vote en ligne
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 32px;">
+
+              <!-- Garantie anonymat -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:18px 20px;">
+                    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#166534;">
+                      Votre anonymat est garanti
+                    </p>
+                    <p style="margin:0;font-size:13px;color:#15803d;line-height:1.6;">
+                      Ce reçu confirme uniquement que votre vote a été enregistré.
+                      Il ne révèle en aucun cas le candidat pour lequel vous avez voté.
+                      Aucun lien n'existe entre votre identité et votre bulletin dans notre base de données.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- PIED DE PAGE -->
+          <tr>
+            <td style="background:#f8faff;border:1px solid #e5e9f0;border-top:none;border-radius:0 0 12px 12px;padding:28px 48px;text-align:center;">
+              <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">
+                Ce message a été envoyé automatiquement par la plateforme VoteSystem.
+              </p>
+              <p style="margin:0 0 16px;font-size:12px;color:#cbd5e1;">
+                Université &nbsp;|&nbsp; Filière Génie Logiciel &nbsp;|&nbsp; Licence 2025-2026
+              </p>
+              <p style="margin:0;font-size:11px;color:#e2e8f0;">
+                Cet email est confidentiel et destiné uniquement à son destinataire.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>"""
+
+    text_content = f"""Bonjour {prenom},
+
+Votre vote pour "{scrutin_titre}" a bien été enregistré.
+
+RECU DE VOTE OFFICIEL
+---------------------
+Scrutin : {scrutin_titre}
+
+Empreinte de votre bulletin (SHA-256) :
+{hash_blocs}
+
+Cette empreinte confirme que votre vote est bien pris en compte,
+sans révéler votre choix. Votre anonymat est garanti.
+
+Vérifier votre vote en ligne :
+{verification_url}
+
+— VoteSystem | Université | Génie Logiciel 2025-2026"""
+
     try:
         response = requests.post(
             'https://api.sendgrid.com/v3/mail/send',
@@ -36,33 +224,11 @@ def envoyer_email_recu_vote(destinataire: str, prenom: str,
                     'to':      [{'email': destinataire}],
                     'subject': f'Reçu de vote — {scrutin_titre}',
                 }],
-                'from': {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
-                'content': [{
-                    'type':  'text/plain',
-                    'value': f"""Bonjour {prenom},
-
-Votre vote pour "{scrutin_titre}" a bien été enregistré.
-
-═══════════════════════════════════════
-  REÇU DE VOTE
-═══════════════════════════════════════
-
-  Hash de votre bulletin :
-  {hash_vote}
-
-═══════════════════════════════════════
-
-Conservez ce reçu — il vous permet de vérifier
-que votre vote est bien pris en compte.
-
-Pour vérifier votre vote :
-{verification_url}
-
-Important : ce reçu ne révèle pas votre choix.
-Votre anonymat est garanti.
-
-— L'équipe VoteSystem""",
-                }],
+                'from':    {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
+                'content': [
+                    {'type': 'text/plain', 'value': text_content},
+                    {'type': 'text/html',  'value': html_content},
+                ],
             },
             timeout=10,
         )
@@ -122,20 +288,55 @@ class VoteView(generics.CreateAPIView):
         except Candidat.DoesNotExist:
             return api_error('ERR_CANDIDAT_INVALIDE',
                              'Candidat invalide pour ce scrutin.', 400)
+        
+        
 
-        # ── Chiffrement RSA 2048 ──────────────────────────────────────────────
-        # import hashlib, hmac, json, base64
+        # # ── Chiffrement RSA 2048 ──────────────────────────────────────────────
+        # # import hashlib, hmac, json, base64
 
-        bulletin_data    = json.dumps({
+        # bulletin_data    = json.dumps({
+        #     'candidat_id': candidat.id,
+        #     'scrutin_id':  scrutin.id,
+        # }).encode('utf-8')
+        # bulletin_chiffre = base64.b64encode(bulletin_data).decode('utf-8')
+        # secret           = django_settings.SECRET_KEY.encode('utf-8')
+        # signature        = hmac.new(
+        #     secret, bulletin_chiffre.encode('utf-8'), hashlib.sha256).hexdigest()
+        # hash_vote        = hashlib.sha256(
+        #     bulletin_chiffre.encode('utf-8')).hexdigest()
+        
+        # ── Chiffrement RSA 2048 + Signature HMAC-SHA256 ──────────────────────
+        from Crypto.PublicKey import RSA
+        from Crypto.Cipher   import PKCS1_OAEP
+
+        # 1. Prépare le contenu du bulletin
+        bulletin_data = json.dumps({
             'candidat_id': candidat.id,
             'scrutin_id':  scrutin.id,
         }).encode('utf-8')
-        bulletin_chiffre = base64.b64encode(bulletin_data).decode('utf-8')
-        secret           = django_settings.SECRET_KEY.encode('utf-8')
-        signature        = hmac.new(
-            secret, bulletin_chiffre.encode('utf-8'), hashlib.sha256).hexdigest()
-        hash_vote        = hashlib.sha256(
-            bulletin_chiffre.encode('utf-8')).hexdigest()
+
+        # 2. Chiffrement RSA 2048 OAEP avec la clé publique
+        try:
+            with open(django_settings.RSA_PUBLIC_KEY_PATH, 'rb') as f:
+                cle_publique = RSA.import_key(f.read())
+            cipher           = PKCS1_OAEP.new(cle_publique)
+            bulletin_chiffre = base64.b64encode(
+                cipher.encrypt(bulletin_data)
+            ).decode('utf-8')
+        except Exception as e:
+            return api_error('ERR_CHIFFREMENT',
+                            'Erreur lors du chiffrement du bulletin.', 500)
+
+        # 3. Signature HMAC-SHA256 du bulletin chiffré
+        secret    = django_settings.SECRET_KEY.encode('utf-8')
+        signature = hmac.new(
+            secret, bulletin_chiffre.encode('utf-8'), hashlib.sha256
+        ).hexdigest()
+
+        # 4. Hash SHA-256 du bulletin chiffré (reçu remis à l'électeur)
+        hash_vote = hashlib.sha256(
+            bulletin_chiffre.encode('utf-8')
+        ).hexdigest()
 
         # ── Stockage anonyme (SANS electeur_id — RG04) ────────────────────────
         vote = Vote.objects.create(

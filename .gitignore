@@ -226,3 +226,4 @@ staticfiles/
 htmlcov/
 .coverage
 coverage.xml
+keys/

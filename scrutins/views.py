@@ -23,7 +23,250 @@ def envoyer_email_resultats_candidat(destinataire: str, nom_candidat: str,
                                       taux_participation: float,
                                       gagnant: str, resultats_url: str,
                                       api_key: str):
-    """Envoie les résultats par email au candidat via SendGrid."""
+    """Envoie les résultats par email au candidat via SendGrid avec template HTML professionnel."""
+
+    est_gagnant = nom_candidat.strip().lower() in gagnant.strip().lower()
+
+    if est_gagnant:
+        bandeau_bg    = '#16a34a'
+        bandeau_texte = 'Félicitations — Vous avez été élu(e) !'
+        carte_bg      = '#f0fdf4'
+        carte_border  = '#bbf7d0'
+        carte_couleur = '#166534'
+    else:
+        bandeau_bg    = '#2563a8'
+        bandeau_texte = 'Résultats du scrutin disponibles'
+        carte_bg      = '#f8faff'
+        carte_border  = '#dbeafe'
+        carte_couleur = '#1e3a5f'
+
+    # Barre de progression pourcentage
+    barre_largeur = min(int(pourcentage), 100)
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Résultats — {scrutin_titre}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f9;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+          <!-- EN-TÊTE -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563a8 100%);border-radius:12px 12px 0 0;padding:40px 48px;text-align:center;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-bottom:16px;">
+                    <div style="display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:12px;padding:14px 20px;">
+                      <span style="font-size:28px;color:#ffffff;font-weight:700;letter-spacing:1px;">VoteSystem</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center">
+                    <p style="margin:0;color:rgba(255,255,255,0.85);font-size:14px;letter-spacing:0.5px;">
+                      Système de Vote Électronique Sécurisé
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- BANDEAU STATUT -->
+          <tr>
+            <td style="background:{bandeau_bg};padding:16px 48px;text-align:center;">
+              <p style="margin:0;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.5px;">
+                {bandeau_texte}
+              </p>
+            </td>
+          </tr>
+
+          <!-- CORPS -->
+          <tr>
+            <td style="background:#ffffff;padding:48px;border-left:1px solid #e5e9f0;border-right:1px solid #e5e9f0;">
+
+              <!-- Salutation -->
+              <p style="margin:0 0 8px;font-size:22px;font-weight:600;color:#1a2844;">
+                Bonjour {nom_candidat},
+              </p>
+              <p style="margin:0 0 32px;font-size:15px;color:#64748b;line-height:1.6;">
+                Le scrutin <strong style="color:#1a2844;">«&nbsp;{scrutin_titre}&nbsp;»</strong>
+                vient d'être clôturé. Voici le détail de vos résultats officiels.
+              </p>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 32px;">
+
+              <!-- Carte résultats personnels -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td style="background:{carte_bg};border:1px solid {carte_border};border-radius:12px;padding:28px 32px;">
+
+                    <p style="margin:0 0 20px;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;text-align:center;">
+                      Vos résultats
+                    </p>
+
+                    <!-- Grille stats -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                      <tr>
+                        <td width="50%" style="padding:0 8px 0 0;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="background:#ffffff;border:1px solid #e5e9f0;border-radius:8px;padding:16px;text-align:center;">
+                                <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:{carte_couleur};">{nb_voix}</p>
+                                <p style="margin:0;font-size:12px;color:#94a3b8;">Voix obtenues</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <td width="50%" style="padding:0 0 0 8px;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="background:#ffffff;border:1px solid #e5e9f0;border-radius:8px;padding:16px;text-align:center;">
+                                <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:{carte_couleur};">{pourcentage}%</p>
+                                <p style="margin:0;font-size:12px;color:#94a3b8;">Des suffrages</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Barre de progression -->
+                    <p style="margin:0 0 8px;font-size:12px;color:#64748b;">
+                      Part des voix obtenues
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:4px;">
+                      <tr>
+                        <td style="background:#e5e9f0;border-radius:999px;height:10px;overflow:hidden;">
+                          <div style="background:linear-gradient(90deg,#1e3a5f,#2563a8);height:10px;width:{barre_largeur}%;border-radius:999px;"></div>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:0;font-size:11px;color:#94a3b8;text-align:right;">{pourcentage}%</p>
+
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Carte participation globale -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td style="background:#f8faff;border:1px solid #e5e9f0;border-radius:12px;padding:20px 32px;">
+                    <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;">
+                      Données globales du scrutin
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="font-size:13px;color:#64748b;padding:6px 0;border-bottom:1px solid #e5e9f0;">
+                          Total des votants
+                        </td>
+                        <td style="font-size:13px;font-weight:600;color:#1a2844;text-align:right;padding:6px 0;border-bottom:1px solid #e5e9f0;">
+                          {nb_votants} électeurs
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="font-size:13px;color:#64748b;padding:6px 0;border-bottom:1px solid #e5e9f0;">
+                          Taux de participation
+                        </td>
+                        <td style="font-size:13px;font-weight:600;color:#1a2844;text-align:right;padding:6px 0;border-bottom:1px solid #e5e9f0;">
+                          {taux_participation}%
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="font-size:13px;color:#64748b;padding:6px 0;">
+                          Candidat élu
+                        </td>
+                        <td style="font-size:13px;font-weight:600;color:#16a34a;text-align:right;padding:6px 0;">
+                          {gagnant}
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Bouton résultats complets -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td align="center">
+                    <a href="{resultats_url}"
+                       style="display:inline-block;background:linear-gradient(135deg,#1e3a5f 0%,#2563a8 100%);color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:14px 36px;border-radius:10px;letter-spacing:0.5px;">
+                      Consulter les résultats complets
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Séparateur -->
+              <hr style="border:none;border-top:1px solid #e5e9f0;margin:0 0 24px;">
+
+              <!-- Note intégrité -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#f8faff;border-radius:8px;padding:18px 20px;">
+                    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#1e3a5f;">
+                      Intégrité des résultats garantie
+                    </p>
+                    <p style="margin:0;font-size:13px;color:#64748b;line-height:1.6;">
+                      Ces résultats ont été calculés automatiquement à partir des bulletins
+                      chiffrés en RSA 2048 et signés par HMAC-SHA256. Toute altération
+                      est détectable grâce à la chaîne d'audit immuable du système.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- PIED DE PAGE -->
+          <tr>
+            <td style="background:#f8faff;border:1px solid #e5e9f0;border-top:none;border-radius:0 0 12px 12px;padding:28px 48px;text-align:center;">
+              <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">
+                Ce message a été envoyé automatiquement par la plateforme VoteSystem.
+              </p>
+              <p style="margin:0 0 16px;font-size:12px;color:#cbd5e1;">
+                Université &nbsp;|&nbsp; Filière Génie Logiciel &nbsp;|&nbsp; Licence 2025-2026
+              </p>
+              <p style="margin:0;font-size:11px;color:#e2e8f0;">
+                Cet email est confidentiel et destiné uniquement à son destinataire.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>"""
+
+    text_content = f"""Bonjour {nom_candidat},
+
+Le scrutin "{scrutin_titre}" vient d'être clôturé.
+
+VOS RÉSULTATS
+-------------
+Voix obtenues    : {nb_voix}
+Part des suffrages : {pourcentage}%
+Total votants    : {nb_votants}
+Taux participation : {taux_participation}%
+Candidat élu     : {gagnant}
+
+Consultez les résultats complets :
+{resultats_url}
+
+— VoteSystem | Université | Génie Logiciel 2025-2026"""
+
     try:
         response = http_requests.post(
             'https://api.sendgrid.com/v3/mail/send',
@@ -36,31 +279,11 @@ def envoyer_email_resultats_candidat(destinataire: str, nom_candidat: str,
                     'to':      [{'email': destinataire}],
                     'subject': f'Résultats — {scrutin_titre}',
                 }],
-                'from': {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
-                'content': [{
-                    'type':  'text/plain',
-                    'value': f"""Bonjour {nom_candidat},
-
-Le scrutin "{scrutin_titre}" vient d'être clôturé.
-
-═══════════════════════════════════════
-  VOS RÉSULTATS
-═══════════════════════════════════════
-
-  Voix obtenues   : {nb_voix}
-  Pourcentage     : {pourcentage}%
-  Total votants   : {nb_votants}
-  Participation   : {taux_participation}%
-
-  Élu(e)          : {gagnant}
-
-═══════════════════════════════════════
-
-Consultez les résultats complets :
-{resultats_url}
-
-— L'équipe VoteSystem""",
-                }],
+                'from':    {'email': 'kenmatiov@gmail.com', 'name': 'VoteSystem'},
+                'content': [
+                    {'type': 'text/plain', 'value': text_content},
+                    {'type': 'text/html',  'value': html_content},
+                ],
             },
             timeout=10,
         )
@@ -200,8 +423,38 @@ class ScrutinAdminViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def resultats(self, request, pk=None):
         """GET /api/v1/admin/scrutins/{id}/resultats/"""
+        from votes.models import Vote
+        from votes.services import verifier_signature_bulletin
+        from audit.services import AuditService
+
         scrutin = self.get_object()
-        return Response({'status': 'success', 'data': scrutin.get_resultats()})
+
+        # ── Vérification d'intégrité de tous les bulletins ────────────────
+        bulletins_alteres = []
+        votes = Vote.objects.filter(scrutin=scrutin)
+
+        for vote in votes:
+            if not verifier_signature_bulletin(vote.bulletin_chiffre, vote.signature):
+                bulletins_alteres.append(vote.id)
+                # Journalise l'alerte sans révéler le candidat
+                AuditService.log(
+                    action  = 'ALERTE_FRAUDE',
+                    acteur  = request.user,
+                    details = {'scrutin_id': scrutin.id, 'vote_id': vote.id},
+                    request = request,
+                )
+
+        resultats = scrutin.get_resultats()
+
+        # Ajoute l'info d'intégrité dans la réponse admin
+        resultats['integrite'] = {
+            'bulletins_total'   : votes.count(),
+            'bulletins_valides' : votes.count() - len(bulletins_alteres),
+            'bulletins_alteres' : len(bulletins_alteres),
+            'alerte'            : len(bulletins_alteres) > 0,
+        }
+
+        return Response({'status': 'success', 'data': resultats})
 
     @action(detail=True, methods=['get'], url_path='resultats/export')
     def export_csv(self, request, pk=None):
