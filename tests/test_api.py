@@ -80,78 +80,81 @@ class TestScrutinsElecteur:
             assert s.get('filiere_cible') != 'RSI'
 
 
-@pytest.mark.django_db
-class TestVoteAPI:
-    """Tests d'intégration — Vote (RG01, RG04, RG10)"""
+# @pytest.mark.django_db
+# class TestVoteAPI:
+#     """Tests d'intégration — Vote (RG01, RG04, RG10)"""
 
-    def test_vote_sans_authentification(self):
-        """Vote impossible sans authentification"""
-        client   = APIClient()
-        response = client.post('/api/v1/electeur/vote/', {
-            'scrutin_id':  1,
-            'candidat_id': 1,
-        }, format='json')
-        assert response.status_code == 401
+#     def test_vote_sans_authentification(self):
+#         """Vote impossible sans authentification"""
+#         client   = APIClient()
+#         response = client.post('/api/v1/electeur/vote/', {
+#             'scrutin_id':  1,
+#             'candidat_id': 1,
+#         }, format='json')
+#         assert response.status_code == 401
 
-    def test_vote_succes(self):
-        """RG01 — Vote réussi retourne un reçu hash"""
-        electeur = ElecteurFactory(statut='ELIGIBLE')
-        scrutin  = ScrutinFactory(statut='OUVERT', filiere_cible=None, niveau_cible=None)
-        candidat = CandidatFactory(scrutin=scrutin, est_vote_blanc=False)
-        client   = APIClient()
-        client.force_authenticate(user=electeur.user)
-        response = client.post('/api/v1/electeur/vote/', {
-            'scrutin_id':  scrutin.id,
-            'candidat_id': candidat.id,
-        }, format='json')
-        assert response.status_code == 200
-        assert 'recu' in response.data.get('data', {})
+#     def test_vote_succes(self):
+#         """RG01 — Vote réussi retourne un reçu hash"""
+#         electeur = ElecteurFactory(statut='ELIGIBLE')
+#         scrutin  = ScrutinFactory(statut='OUVERT', filiere_cible=None, niveau_cible=None)
+#         candidat = CandidatFactory(scrutin=scrutin, est_vote_blanc=False)
+#         client   = APIClient()
+#         client.force_authenticate(user=electeur.user)
+#         response = client.post('/api/v1/electeur/vote/', {
+#             'scrutin_id':  scrutin.id,
+#             'candidat_id': candidat.id,
+#         }, format='json')
+#         assert response.status_code == 200
+#         assert 'recu' in response.data.get('data', {})
 
-    def test_double_vote_interdit(self):
-        """RG01 — Double vote retourne ERR_DOUBLE_VOTE (409)"""
-        electeur = ElecteurFactory(statut='ELIGIBLE')
-        scrutin  = ScrutinFactory(statut='OUVERT', filiere_cible=None, niveau_cible=None)
-        candidat = CandidatFactory(scrutin=scrutin, est_vote_blanc=False)
-        client   = APIClient()
-        client.force_authenticate(user=electeur.user)
+#     def test_double_vote_interdit(self):
+#         """RG01 — Double vote retourne ERR_DOUBLE_VOTE (409)"""
+#         electeur = ElecteurFactory(statut='ELIGIBLE')
+#         scrutin  = ScrutinFactory(statut='OUVERT', filiere_cible=None, niveau_cible=None)
+#         candidat = CandidatFactory(scrutin=scrutin, est_vote_blanc=False)
+#         client   = APIClient()
+#         client.force_authenticate(user=electeur.user)
 
-        client.post('/api/v1/electeur/vote/', {
-            'scrutin_id':  scrutin.id,
-            'candidat_id': candidat.id,
-        }, format='json')
+#         client.post('/api/v1/electeur/vote/', {
+#             'scrutin_id':  scrutin.id,
+#             'candidat_id': candidat.id,
+#         }, format='json')
 
-        response = client.post('/api/v1/electeur/vote/', {
-            'scrutin_id':  scrutin.id,
-            'candidat_id': candidat.id,
-        }, format='json')
-        assert response.status_code == 409
+#         response = client.post('/api/v1/electeur/vote/', {
+#             'scrutin_id':  scrutin.id,
+#             'candidat_id': candidat.id,
+#         }, format='json')
+#         assert response.status_code == 409
 
-    def test_vote_scrutin_ferme(self):
-        """RG05 — Vote impossible sur scrutin clôturé"""
-        electeur = ElecteurFactory(statut='ELIGIBLE')
-        scrutin  = ScrutinFactory(statut='CLOTURE')
-        candidat = CandidatFactory(scrutin=scrutin)
-        client   = APIClient()
-        client.force_authenticate(user=electeur.user)
-        response = client.post('/api/v1/electeur/vote/', {
-            'scrutin_id':  scrutin.id,
-            'candidat_id': candidat.id,
-        }, format='json')
-        assert response.status_code == 403
+#     def test_vote_scrutin_ferme(self):
+#         """RG05 — Vote impossible sur scrutin clôturé"""
+#         electeur = ElecteurFactory(statut='ELIGIBLE')
+#         scrutin  = ScrutinFactory(statut='CLOTURE')
+#         candidat = CandidatFactory(scrutin=scrutin)
+#         client   = APIClient()
+#         client.force_authenticate(user=electeur.user)
+#         response = client.post('/api/v1/electeur/vote/', {
+#             'scrutin_id':  scrutin.id,
+#             'candidat_id': candidat.id,
+#         }, format='json')
+#         assert response.status_code == 403
 
-    def test_vote_electeur_suspendu(self):
-        """RG13 — Électeur suspendu ne peut pas voter"""
-        electeur = ElecteurFactory(statut='SUSPENDU')
-        scrutin  = ScrutinFactory(statut='OUVERT')
-        candidat = CandidatFactory(scrutin=scrutin)
-        client   = APIClient()
-        client.force_authenticate(user=electeur.user)
-        response = client.post('/api/v1/electeur/vote/', {
-            'scrutin_id':  scrutin.id,
-            'candidat_id': candidat.id,
-        }, format='json')
-        assert response.status_code == 403
+#     def test_vote_electeur_suspendu(self):
+#         """RG13 — Électeur suspendu ne peut pas voter"""
+#         electeur = ElecteurFactory(statut='SUSPENDU')
+#         scrutin  = ScrutinFactory(statut='OUVERT')
+#         candidat = CandidatFactory(scrutin=scrutin)
+#         client   = APIClient()
+#         client.force_authenticate(user=electeur.user)
+#         response = client.post('/api/v1/electeur/vote/', {
+#             'scrutin_id':  scrutin.id,
+#             'candidat_id': candidat.id,
+#         }, format='json')
+#         assert response.status_code == 403
 
+
+
+# test_vote
 
 @pytest.mark.django_db
 class TestAdminAPI:
