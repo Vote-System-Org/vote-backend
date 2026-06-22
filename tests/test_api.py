@@ -154,8 +154,6 @@ class TestScrutinsElecteur:
 
 
 
-# test_vote
-
 @pytest.mark.django_db
 class TestAdminAPI:
     """Tests d'intégration — Administration"""

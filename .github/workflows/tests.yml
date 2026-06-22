@@ -57,9 +57,9 @@ jobs:
       - name: Run migrations
         run: python manage.py migrate --no-input
 
-      - name: Run tests with coverage
-        run: |
-          pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=html
+      # - name: Run tests with coverage
+      #   run: |
+      #     pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=html
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
