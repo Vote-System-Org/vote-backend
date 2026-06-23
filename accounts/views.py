@@ -215,23 +215,20 @@ class VerificationOTPView(generics.GenericAPIView):
 
 
 class RenvoyerOTPView(generics.GenericAPIView):
-    """
-    POST /api/v1/auth/inscription/renvoyer-otp/
-    Renvoie un nouveau code si l'ancien est expiré.
-    Corps : { "matricule": "21GL1234" }
-    """
     permission_classes = [AllowAny]
 
     def post(self, request):
         matricule = request.data.get('matricule', '').strip()
-
         if not matricule:
             return api_error('ERR_PARAMS_MANQUANTS', 'matricule requis.', 400)
 
-        # Vérifier que le matricule est en cours d'inscription
-        from django.core.cache import cache
-        cache_key = f"inscription_pending_{matricule}"
-        if not cache.get(cache_key):
+        # Cherche le dernier OTP non utilisé en base
+        try:
+            ancien_otp = OTPInscription.objects.filter(
+                matricule = matricule,
+                utilise   = False,
+            ).latest('created_at')
+        except OTPInscription.DoesNotExist:
             return api_error('ERR_SESSION_EXPIREE',
                              'Session expirée. Recommencez l\'inscription.', 400)
 
@@ -240,9 +237,12 @@ class RenvoyerOTPView(generics.GenericAPIView):
         except ListeBlancheReference.DoesNotExist:
             return api_error('ERR_MATRICULE_INCONNU', 'Matricule inconnu.', 400)
 
+        # Génère un nouvel OTP en conservant les données d'inscription
         otp = OTPInscription.generer(
-            matricule = matricule,
-            email     = ref.email,
+            matricule         = matricule,
+            email             = ref.email,
+            email_inscription = ancien_otp.email_inscription,
+            password_hash     = ancien_otp.password_hash,
         )
 
         api_key = getattr(settings, 'SENDGRID_API_KEY', '')
