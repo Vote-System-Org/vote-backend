@@ -14,3 +14,6 @@ python manage.py migrate
 
 # Créer un super utilisateur admin dans Render
 python manage.py create_admin 
+
+
+python manage.py update_emails_lb
