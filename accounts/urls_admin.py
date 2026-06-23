@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ElecteurViewSet, ImportListeBlancheView, ListeBlancheListView,
+    ListeBlancheDetailView,
 )
 
 router = DefaultRouter()
@@ -13,4 +14,6 @@ urlpatterns = [
          name='import_liste_blanche'),
     path('liste-blanche/',        ListeBlancheListView.as_view(),
          name='liste_blanche'),
+    path('liste-blanche/<int:pk>/', ListeBlancheDetailView.as_view(),
+         name='liste_blanche_detail'),
 ]

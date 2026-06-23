@@ -931,3 +931,81 @@ Si vous n'avez pas demandé ce code, ignorez cet email.
     except Exception as e:
         print(f"Erreur envoi OTP: {e}")
         return None
+      
+  
+
+
+class ListeBlancheDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/admin/liste-blanche/{id}/  — détail
+    PUT    /api/admin/liste-blanche/{id}/  — modifier nom, prenom, email
+    DELETE /api/admin/liste-blanche/{id}/  — supprimer (si pas encore inscrit)
+    """
+    queryset           = ListeBlancheReference.objects.all()
+    serializer_class   = ListeBlancheSerializer
+    permission_classes = [IsAdmin]
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Champs modifiables uniquement
+        champs_autorises = ['nom', 'prenom', 'email']
+        data = {k: v for k, v in request.data.items() if k in champs_autorises}
+        serializer = self.get_serializer(instance, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        AuditService.log(
+            action  = 'MODIFICATION_LISTE_BLANCHE',
+            acteur  = request.user,
+            details = {'matricule': instance.matricule, 'champs': list(data.keys())},
+            request = request,
+        )
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.a_cree_son_compte:
+            return api_error(
+                'ERR_SUPPRESSION_IMPOSSIBLE',
+                'Impossible de supprimer un étudiant ayant déjà créé son compte.',
+                403,
+            )
+        matricule = instance.matricule
+        instance.delete()
+        AuditService.log(
+            action  = 'SUPPRESSION_LISTE_BLANCHE',
+            acteur  = request.user,
+            details = {'matricule': matricule},
+            request = request,
+        )
+        return Response({'status': 'success', 'message': 'Entrée supprimée.'}, status=204)
+
+
+class ImportListeBlancheUpsertView(generics.CreateAPIView):
+    """
+    POST /api/admin/liste-blanche/import/?mode=upsert
+    Import avec mise à jour des entrées existantes.
+    """
+    serializer_class   = ImportCSVSerializer
+    permission_classes = [IsAdmin]
+
+    def create(self, request, *args, **kwargs):
+        mode = request.query_params.get('mode', 'skip')  # skip | upsert
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if mode == 'upsert':
+            stats = serializer.process_upsert()
+        else:
+            stats = serializer.process()
+
+        AuditService.log(
+            action  = 'IMPORT_LISTE_BLANCHE',
+            acteur  = request.user,
+            details = {**stats, 'mode': mode},
+            request = request,
+        )
+        return Response({
+            'status':  'success',
+            'message': f"{stats['importes']} entrées importées.",
+            'data':    stats,
+        }, status=201)
