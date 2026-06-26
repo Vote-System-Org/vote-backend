@@ -236,7 +236,6 @@ Vérifier votre vote en ligne :
     except Exception as e:
         print(f"Erreur envoi email reçu vote: {e}")
 
-
 class VoteView(generics.CreateAPIView):
     """
     POST /api/v1/electeur/vote/
@@ -246,6 +245,10 @@ class VoteView(generics.CreateAPIView):
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
+        import os
+        from Crypto.PublicKey import RSA
+        from Crypto.Cipher   import PKCS1_OAEP
+
         electeur    = request.user.electeur
         scrutin_id  = request.data.get('scrutin_id')
         candidat_id = request.data.get('candidat_id')
@@ -264,11 +267,11 @@ class VoteView(generics.CreateAPIView):
         # ── Moteur d'éligibilité (RG10) ───────────────────────────────────────
         eligible, code_erreur = electeur.est_eligible_scrutin(scrutin)
         if not eligible:
-            messages = {
-                'ERR_COMPTE_NON_ELIGIBLE': 'Votre compte n\'est pas éligible au vote.',
-                'ERR_SCRUTIN_FERME':       'Ce scrutin n\'est pas actuellement ouvert.',
+            messages_erreur = {
+                'ERR_COMPTE_NON_ELIGIBLE': "Votre compte n'est pas éligible au vote.",
+                'ERR_SCRUTIN_FERME':       "Ce scrutin n'est pas actuellement ouvert.",
                 'ERR_DOUBLE_VOTE':         'Vous avez déjà voté pour ce scrutin.',
-                'ERR_NON_ELIGIBLE':        'Vous n\'êtes pas éligible à ce scrutin.',
+                'ERR_NON_ELIGIBLE':        "Vous n'êtes pas éligible à ce scrutin.",
             }
             http_codes = {
                 'ERR_COMPTE_NON_ELIGIBLE': 403,
@@ -278,7 +281,7 @@ class VoteView(generics.CreateAPIView):
             }
             return api_error(
                 code_erreur,
-                messages.get(code_erreur, 'Non éligible.'),
+                messages_erreur.get(code_erreur, 'Non éligible.'),
                 http_codes.get(code_erreur, 403),
             )
 
@@ -288,52 +291,40 @@ class VoteView(generics.CreateAPIView):
         except Candidat.DoesNotExist:
             return api_error('ERR_CANDIDAT_INVALIDE',
                              'Candidat invalide pour ce scrutin.', 400)
-        
-        
 
-        # # ── Chiffrement RSA 2048 ──────────────────────────────────────────────
-        # # import hashlib, hmac, json, base64
-
-        # bulletin_data    = json.dumps({
-        #     'candidat_id': candidat.id,
-        #     'scrutin_id':  scrutin.id,
-        # }).encode('utf-8')
-        # bulletin_chiffre = base64.b64encode(bulletin_data).decode('utf-8')
-        # secret           = django_settings.SECRET_KEY.encode('utf-8')
-        # signature        = hmac.new(
-        #     secret, bulletin_chiffre.encode('utf-8'), hashlib.sha256).hexdigest()
-        # hash_vote        = hashlib.sha256(
-        #     bulletin_chiffre.encode('utf-8')).hexdigest()
-        
-        # ── Chiffrement RSA 2048 + Signature HMAC-SHA256 ──────────────────────
-        from Crypto.PublicKey import RSA
-        from Crypto.Cipher   import PKCS1_OAEP
-
-        # 1. Prépare le contenu du bulletin
+        # ── Chiffrement RSA 2048 OAEP ─────────────────────────────────────────
         bulletin_data = json.dumps({
             'candidat_id': candidat.id,
             'scrutin_id':  scrutin.id,
         }).encode('utf-8')
 
-        # 2. Chiffrement RSA 2048 OAEP avec la clé publique
         try:
-            with open(django_settings.RSA_PUBLIC_KEY_PATH, 'rb') as f:
-                cle_publique = RSA.import_key(f.read())
+            # Priorité 1 : variable d'environnement (Render production)
+            cle_pem = os.environ.get('RSA_PUBLIC_KEY', '').strip()
+            if cle_pem:
+                cle_publique = RSA.import_key(cle_pem)
+            else:
+                # Priorité 2 : fichier local (développement)
+                with open(django_settings.RSA_PUBLIC_KEY_PATH, 'rb') as f:
+                    cle_publique = RSA.import_key(f.read())
+
             cipher           = PKCS1_OAEP.new(cle_publique)
             bulletin_chiffre = base64.b64encode(
                 cipher.encrypt(bulletin_data)
             ).decode('utf-8')
-        except Exception as e:
-            return api_error('ERR_CHIFFREMENT',
-                            'Erreur lors du chiffrement du bulletin.', 500)
 
-        # 3. Signature HMAC-SHA256 du bulletin chiffré
+        except Exception as e:
+            print(f"Erreur chiffrement RSA : {e}")
+            return api_error('ERR_CHIFFREMENT',
+                             'Erreur lors du chiffrement du bulletin.', 500)
+
+        # ── Signature HMAC-SHA256 ─────────────────────────────────────────────
         secret    = django_settings.SECRET_KEY.encode('utf-8')
         signature = hmac.new(
             secret, bulletin_chiffre.encode('utf-8'), hashlib.sha256
         ).hexdigest()
 
-        # 4. Hash SHA-256 du bulletin chiffré (reçu remis à l'électeur)
+        # ── Hash SHA-256 (reçu remis à l'électeur) ────────────────────────────
         hash_vote = hashlib.sha256(
             bulletin_chiffre.encode('utf-8')
         ).hexdigest()
@@ -358,7 +349,7 @@ class VoteView(generics.CreateAPIView):
         electeur.date_vote = timezone.now()
         electeur.save(update_fields=['a_vote', 'date_vote'])
 
-        # ── Journalisation (SANS candidat_id — anonymat) ─────────────────────
+        # ── Journalisation (SANS candidat_id — anonymat préservé) ────────────
         AuditService.log(
             action  = 'VOTE',
             acteur  = request.user,
@@ -367,18 +358,19 @@ class VoteView(generics.CreateAPIView):
         )
 
         # ── Envoi email reçu de vote ──────────────────────────────────────────
-        frontend_url      = request.headers.get('Origin', 'https://vote-frontend-phi.vercel.app')
-        verification_url  = f"{frontend_url}/verifier-vote?hash={hash_vote}"
-        email_electeur    = request.user.email
+        frontend_url     = request.headers.get(
+            'Origin', 'https://vote-frontend-phi.vercel.app')
+        verification_url = f"{frontend_url}/verifier-vote?hash={hash_vote}"
+        email_electeur   = request.user.email
 
         if email_electeur and django_settings.SENDGRID_API_KEY:
             envoyer_email_recu_vote(
-                destinataire    = email_electeur,
-                prenom          = request.user.first_name or request.user.username,
-                scrutin_titre   = scrutin.titre,
-                hash_vote       = hash_vote,
-                verification_url= verification_url,
-                api_key         = django_settings.SENDGRID_API_KEY,
+                destinataire     = email_electeur,
+                prenom           = request.user.first_name or request.user.username,
+                scrutin_titre    = scrutin.titre,
+                hash_vote        = hash_vote,
+                verification_url = verification_url,
+                api_key          = django_settings.SENDGRID_API_KEY,
             )
 
         return Response({
@@ -389,24 +381,6 @@ class VoteView(generics.CreateAPIView):
                 'scrutin_id': scrutin.id,
             },
         }, status=status.HTTP_200_OK)
-
-
-class VerificationRecuView(generics.RetrieveAPIView):
-    """GET /api/v1/electeur/vote/confirmation/{hash_vote}/"""
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, hash_vote):
-        existe = Vote.objects.filter(hash_vote=hash_vote).exists()
-        if existe:
-            return Response({
-                'status':  'success',
-                'message': 'Ce reçu correspond à un vote valide.',
-                'data':    {'hash': hash_vote, 'valide': True},
-            })
-        return api_error('ERR_RECU_INVALIDE',
-                         'Ce reçu ne correspond à aucun vote.', 404)
-
-
 
 class VerificationRecuPublicView(generics.RetrieveAPIView):
     """GET /api/v1/public/vote/verification/{hash_vote}/"""
