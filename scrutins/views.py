@@ -689,7 +689,7 @@ class Command(BaseCommand):
                 # Log audit
                 AuditService.log(
                     action='CLOTURE_SCRUTIN',
-                    acteur_id=None,
+                    acteur=None,
                     details={
                         'scrutin_id':  scrutin.id,
                         'titre':       scrutin.titre,
@@ -803,7 +803,7 @@ def cron_cloture(request):
 
             AuditService.log(
                 action='CLOTURE_SCRUTIN',
-                acteur_id=None,
+                acteur=None,
                 details={
                     'scrutin_id':  scrutin.id,
                     'titre':       scrutin.titre,
