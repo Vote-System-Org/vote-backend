@@ -382,9 +382,9 @@ class VoteView(generics.CreateAPIView):
             },
         }, status=status.HTTP_200_OK)
 
-class VerificationRecuPublicView(generics.RetrieveAPIView):
-    """GET /api/v1/public/vote/verification/{hash_vote}/"""
-    permission_classes = [AllowAny]
+class VerificationRecuView(generics.RetrieveAPIView):
+    """GET /api/v1/electeur/vote/confirmation/{hash_vote}/"""
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, hash_vote):
         existe = Vote.objects.filter(hash_vote=hash_vote).exists()
